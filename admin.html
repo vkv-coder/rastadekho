@@ -325,6 +325,17 @@ function renderCanvas(){
     const scaleX = w/rect.width, scaleY = h/rect.height;
     const x = (evt.clientX-rect.left)*scaleX, y=(evt.clientY-rect.top)*scaleY;
 
+    if(currentStep===1 || currentStep===2){
+      const nearby = findNearbyNode(x,y, 22);
+      if(nearby){
+        const proceed = confirm(
+          `There's already a point very close by (${nearby.type}${nearby.name ? ': '+nearby.name : ''}).\n\n` +
+          `Tap OK to place a new point anyway, or Cancel to stop and use the existing one instead (go to Step 3 to connect it).`
+        );
+        if(!proceed) return;
+      }
+    }
+
     if(currentStep===1){
       pendingTapCoords = {x,y};
       openTypePopup();
@@ -334,6 +345,15 @@ function renderCanvas(){
       handleChainTap(x,y);
     }
   };
+}
+
+function findNearbyNode(x,y,threshold){
+  let nearest=null, bestD=Infinity;
+  nodes.forEach(n=>{
+    const d = Math.hypot(n.x-x, n.y-y);
+    if(d<bestD){ bestD=d; nearest=n; }
+  });
+  return (nearest && bestD<threshold) ? nearest : null;
 }
 
 function openTypePopup(){ document.getElementById('typePopup').style.display='flex'; }
