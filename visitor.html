@@ -146,25 +146,52 @@ function buildGraph(){
     const a=e.node_a, b=e.node_b;
     if(!nodes[a]||!nodes[b]) return;
     const d = dist(nodes[a], nodes[b]);
-    graph[a].push({to:b,d}); graph[b].push({to:a,d});
+    const key = [a,b].sort().join('|');
+    graph[a].push({to:b,d,key}); graph[b].push({to:a,d,key});
   });
 }
 
-function allSimplePaths(start,end){
-  const results = [];
-  function dfs(node, visited, path, length){
-    if(node===end){ results.push({path:[...path], length}); return; }
-    if(path.length>12) return;
-    (graph[node]||[]).forEach(({to,d})=>{
-      if(visited.has(to)) return;
-      visited.add(to); path.push(to);
-      dfs(to, visited, path, length+d);
-      path.pop(); visited.delete(to);
+// Standard shortest-path search (Dijkstra) - scales to large networks (100s of junctions)
+// blockedKey: optional edge key to exclude, used to search for an alternate route
+function dijkstra(start, end, blockedKey){
+  const distMap = {}, prev = {}, visited = {};
+  Object.keys(nodes).forEach(k => distMap[k] = Infinity);
+  if(!(start in distMap)) return null;
+  distMap[start] = 0;
+  const queue = new Set(Object.keys(nodes));
+  while(queue.size){
+    let u = null, best = Infinity;
+    queue.forEach(k=>{ if(distMap[k] < best){ best = distMap[k]; u = k; } });
+    if(u===null) break;
+    queue.delete(u);
+    if(u===end) break;
+    (graph[u]||[]).forEach(({to,d,key})=>{
+      if(!queue.has(to)) return;
+      if(blockedKey && key===blockedKey) return;
+      const alt = distMap[u] + d;
+      if(alt < distMap[to]){ distMap[to] = alt; prev[to] = u; }
     });
   }
-  dfs(start, new Set([start]), [start], 0);
-  results.sort((a,b)=>a.length-b.length);
-  return results;
+  if(distMap[end]===Infinity) return null;
+  const path = [end];
+  let cur = end;
+  while(prev[cur]!==undefined){ cur = prev[cur]; path.unshift(cur); }
+  return { path, length: distMap[end] };
+}
+
+// Shortest route + one reasonable alternate (found by blocking each edge of the shortest route in turn)
+function findRoutes(start, end){
+  const shortest = dijkstra(start, end);
+  if(!shortest) return [];
+  let bestAlt = null;
+  for(let i=0;i<shortest.path.length-1;i++){
+    const key = [shortest.path[i], shortest.path[i+1]].sort().join('|');
+    const candidate = dijkstra(start, end, key);
+    if(candidate && candidate.path.join(',') !== shortest.path.join(',')){
+      if(!bestAlt || candidate.length < bestAlt.length) bestAlt = candidate;
+    }
+  }
+  return bestAlt ? [shortest, bestAlt] : [shortest];
 }
 
 function closestOnSegment(a,b,p){
@@ -242,7 +269,7 @@ function drawRoute(actual, snap){
   if(!endNode) return;
   const nearerNode = dist(snap, nodes[snap.edgeA]) < dist(snap, nodes[snap.edgeB]) ? snap.edgeA : snap.edgeB;
 
-  let candidates = allSimplePaths(nearerNode, endNode).map(r=>{
+  let candidates = findRoutes(nearerNode, endNode).map(r=>{
     const pts = [{x:snap.x,y:snap.y}, nodes[nearerNode], ...r.path.slice(1).map(k=>nodes[k])];
     return {pts, length: dist(snap,nodes[nearerNode]) + r.length};
   });
