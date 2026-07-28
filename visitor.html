@@ -386,6 +386,11 @@ function attachMapEvents(){
   });
 }
 
+function displayName(n){
+  if(currentLang==='gu' && n.name_gu){ return n.name_gu; }
+  return n.name_en || n.name || '';
+}
+
 function buildSvg(){
   const w = project.image_width, h = project.image_height;
   document.getElementById('map').outerHTML = `<svg id="map" viewBox="0 0 ${w} ${h}"></svg>`;
@@ -431,11 +436,6 @@ function buildSvg(){
     line.setAttribute('stroke-linecap','round');
     baseWalkways.appendChild(line);
   });
-
-function displayName(n){
-  if(currentLang==='gu' && n.name_gu){ return n.name_gu; }
-  return n.name_en || n.name || '';
-}
 
   const markerLayer = document.getElementById('nodeMarkers');
   const colors = {gate:'var(--accent)', entrance:'var(--building-dark)', destination:'var(--path)'};
