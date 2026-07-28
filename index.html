@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RastaDekho</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  body{
+    margin:0;font-family:'Segoe UI',Arial,sans-serif;background:#f2efe6;color:#1c2b2d;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;text-align:center;
+  }
+  h1{font-size:1.6rem;}
+  h1 span{color:#c85a3c;}
+  p{color:#6b675a;font-size:0.9rem;}
+</style>
+</head>
+<body>
+  <h1>Rasta<span>Dekho</span></h1>
+  <p id="msg">Loading your location guide...</p>
+
+<script>
+// ---- Which project should the bare domain redirect to? ----
+// To change this later (e.g. once the real hospital project replaces the test one),
+// just update DEFAULT_PROJECT_NAME below to match the exact project name shown
+// in the admin panel's "Select project" dropdown, then re-push this file.
+const DEFAULT_PROJECT_NAME = 'test 3';
+
+const SUPABASE_URL = 'https://jqqnnkzozjskziaizajg.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcW5ua3pvempza3ppYWl6YWpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5Mjk1ODAsImV4cCI6MjA4ODUwNTU4MH0.sEYeWnm0dvuw8bLSVnQhqmgV8LB-pELjpuVIa3Us1Gg';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+(async ()=>{
+  const { data, error } = await sb.from('rd_projects').select('slug').eq('name', DEFAULT_PROJECT_NAME).single();
+  if(error || !data){
+    document.getElementById('msg').textContent = 'Could not find the default location guide. Please check with the site admin.';
+    return;
+  }
+  window.location.href = `visitor.html?p=${data.slug}`;
+})();
+</script>
+</body>
+</html>
