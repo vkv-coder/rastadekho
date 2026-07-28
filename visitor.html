@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RastaDekho</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --ink:#1c2b2d; --paper:#f2efe6; --path:#c85a3c; --path-light:#e8c3b6;
+    --building:#2f6f5e; --building-dark:#1f4f42; --accent:#e8a13d;
+    --line:#cfc8b4; --offroute:#8a5cf6;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Segoe UI',Arial,sans-serif;background:var(--paper);color:var(--ink);
+    display:flex;flex-direction:column;align-items:center;padding:16px;}
+  .topbar{width:100%;max-width:520px;display:flex;justify-content:flex-end;gap:6px;margin-bottom:4px;}
+  .langBtn{padding:5px 12px;font-size:0.78rem;border-radius:6px;border:1px solid var(--line);background:#fff;cursor:pointer;font-weight:600;}
+  .langBtn.active{background:var(--building);color:#fff;border-color:var(--building);}
+  h1{font-size:1.4rem;margin:4px 0 2px 0;letter-spacing:0.5px;}
+  h1 span{color:var(--path);}
+  .sub{font-size:0.85rem;color:#6b675a;margin-bottom:14px;text-align:center;}
+  .panel{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px;width:100%;max-width:520px;margin-bottom:12px;}
+  .row{display:flex;gap:10px;align-items:center;margin-bottom:8px;}
+  label{font-size:0.85rem;font-weight:600;min-width:90px;}
+  select{flex:1;padding:8px;border-radius:6px;border:1px solid var(--line);font-size:0.9rem;}
+  .status{font-size:0.85rem;padding:8px 10px;border-radius:6px;background:#fbf6ea;border:1px solid var(--line);min-height:20px;}
+  .status.ontrack{background:#e5f3ea;border-color:#8fc9a1;color:#1f6b3a;}
+  .status.offtrack{background:#f2eafc;border-color:#c9aef2;color:#5b2fa8;}
+  .distbar{display:flex;gap:16px;font-size:0.85rem;margin-top:8px;font-weight:600;}
+  .distbar span.big{font-size:1.1rem;color:var(--path);}
+  #mapWrap{max-width:100%;overflow:auto;border:1px solid var(--line);border-radius:10px;background:#fbf9f2;}
+  svg{display:block;touch-action:manipulation;cursor:crosshair;}
+  .btnbar{display:flex;gap:8px;width:100%;max-width:520px;margin-top:10px;}
+  button.resetBtn{flex:1;padding:10px;border-radius:8px;background:#fff;color:var(--ink);border:1px solid var(--line);font-size:0.9rem;font-weight:600;cursor:pointer;}
+  .loading{padding:40px;text-align:center;color:#6b675a;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <button class="langBtn active" id="langEN">EN</button>
+  <button class="langBtn" id="langGU">ગુજરાતી</button>
+</div>
+
+<h1 id="projTitle">Rasta<span>Dekho</span></h1>
+<div class="sub" id="subText">Loading...</div>
+
+<div id="loadingMsg" class="loading">Loading map...</div>
+
+<div id="appBody" style="display:none;width:100%;display:flex;flex-direction:column;align-items:center;">
+  <div class="panel">
+    <div class="row">
+      <label id="goingLabel">Going to:</label>
+      <select id="destSelect"></select>
+    </div>
+    <div class="status" id="statusBox"></div>
+    <div class="distbar" id="distBar" style="display:none;">
+      <div><span id="distLabel">Distance:</span> <span class="big" id="distFt">--</span> <span id="ftLabel">ft</span></div>
+      <div><span id="approxLabel">Approx:</span> <span class="big" id="distSteps">--</span> <span id="stepsLabel">steps</span></div>
+    </div>
+  </div>
+
+  <div id="mapWrap">
+    <svg id="map"></svg>
+  </div>
+
+  <div class="btnbar">
+    <button class="resetBtn" id="resetBtn">Reset</button>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://jqqnnkzozjskziaizajg.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcW5ua3pvempza3ppYWl6YWpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5Mjk1ODAsImV4cCI6MjA4ODUwNTU4MH0.sEYeWnm0dvuw8bLSVnQhqmgV8LB-pELjpuVIa3Us1Gg';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const SCALE_FT_PER_PX = 0.5; // adjust per real-world calibration later
+const STEP_LENGTH_FT = 2.5;
+const ON_ROUTE_THRESHOLD_PX = 20;
+
+const T = {
+  en: {
+    sub: 'Tap the map to mark your actual position, pick where you want to go.',
+    going: 'Going to:',
+    initial: 'Tap anywhere on the map below to mark "I am here".',
+    drawn: 'Route drawn. Walk, then tap again anytime to check your position.',
+    ontrack: '✅ You are on the right path. Keep going.',
+    offtrack: '↩ You have drifted off the path — follow the arrow back to it.',
+    updated: 'Route updated to new destination.',
+    noRoute: 'No route found to this destination yet.',
+    dist: 'Distance:', ft: 'ft', approx: 'Approx:', steps: 'steps',
+    reset: 'Reset'
+  },
+  gu: {
+    sub: 'તમારું સાચું સ્થાન બતાવવા નકશા પર ટચ કરો, ક્યાં જવું છે તે પસંદ કરો.',
+    going: 'ક્યાં જવું છે:',
+    initial: 'તમારું સ્થાન બતાવવા નકશા પર ટચ કરો.',
+    drawn: 'રસ્તો બતાવ્યો છે. ચાલો, ફરી ટચ કરી તમારું સ્થાન ચકાસો.',
+    ontrack: '✅ તમે સાચા રસ્તા પર છો. આગળ વધો.',
+    offtrack: '↩ તમે રસ્તા પરથી ભટકી ગયા છો — તીર બતાવે છે તે તરફ પાછા જાઓ.',
+    updated: 'નવું સ્થળ પસંદ થયું, રસ્તો બદલાયો.',
+    noRoute: 'આ સ્થળ માટે હજુ કોઈ રસ્તો મળ્યો નથી.',
+    dist: 'અંતર:', ft: 'ફૂટ', approx: 'અંદાજિત:', steps: 'પગલાં',
+    reset: 'રીસેટ કરો'
+  }
+};
+let currentLang = 'en';
+let lastStatusKey = 'initial';
+
+function applyLanguage(lang){
+  currentLang = lang;
+  const t = T[lang];
+  document.getElementById('subText').textContent = t.sub;
+  document.getElementById('goingLabel').textContent = t.going;
+  document.getElementById('distLabel').textContent = t.dist;
+  document.getElementById('ftLabel').textContent = t.ft;
+  document.getElementById('approxLabel').textContent = t.approx;
+  document.getElementById('stepsLabel').textContent = t.steps;
+  document.getElementById('resetBtn').textContent = t.reset;
+  document.getElementById('langEN').classList.toggle('active', lang==='en');
+  document.getElementById('langGU').classList.toggle('active', lang==='gu');
+  refreshStatusText();
+}
+function refreshStatusText(){ statusBox.textContent = T[currentLang][lastStatusKey] || T[currentLang].initial; }
+function setStatus(key, cls){
+  lastStatusKey = key;
+  statusBox.className = 'status' + (cls?' '+cls:'');
+  statusBox.textContent = T[currentLang][key];
+}
+document.getElementById('langEN').addEventListener('click', ()=>applyLanguage('en'));
+document.getElementById('langGU').addEventListener('click', ()=>applyLanguage('gu'));
+
+// ---- data (loaded from Supabase) ----
+let project = null;
+let nodes = {};      // id -> {x,y,type,name}
+let graph = {};       // id -> [{to,d}]
+let edgeList = [];    // raw edges for drawing base walkways
+
+function dist(p1,p2){ return Math.hypot(p1.x-p2.x, p1.y-p2.y); }
+
+function buildGraph(){
+  graph = {};
+  Object.keys(nodes).forEach(k=>graph[k]=[]);
+  edgeList.forEach(e=>{
+    const a=e.node_a, b=e.node_b;
+    if(!nodes[a]||!nodes[b]) return;
+    const d = dist(nodes[a], nodes[b]);
+    graph[a].push({to:b,d}); graph[b].push({to:a,d});
+  });
+}
+
+function allSimplePaths(start,end){
+  const results = [];
+  function dfs(node, visited, path, length){
+    if(node===end){ results.push({path:[...path], length}); return; }
+    if(path.length>12) return;
+    (graph[node]||[]).forEach(({to,d})=>{
+      if(visited.has(to)) return;
+      visited.add(to); path.push(to);
+      dfs(to, visited, path, length+d);
+      path.pop(); visited.delete(to);
+    });
+  }
+  dfs(start, new Set([start]), [start], 0);
+  results.sort((a,b)=>a.length-b.length);
+  return results;
+}
+
+function closestOnSegment(a,b,p){
+  const abx=b.x-a.x, aby=b.y-a.y;
+  const len2 = abx*abx+aby*aby || 1;
+  let t = ((p.x-a.x)*abx + (p.y-a.y)*aby)/len2;
+  t = Math.max(0,Math.min(1,t));
+  const cx=a.x+abx*t, cy=a.y+aby*t;
+  return {x:cx,y:cy,t,d:dist(p,{x:cx,y:cy})};
+}
+function snapToWalkway(p){
+  let best=null;
+  edgeList.forEach(e=>{
+    const a=nodes[e.node_a], b=nodes[e.node_b];
+    if(!a||!b) return;
+    const c = closestOnSegment(a,b,p);
+    if(!best || c.d<best.d) best = {...c, edgeA:e.node_a, edgeB:e.node_b};
+  });
+  return best;
+}
+function closestPointOnPolyline(pts, p){
+  let best={d:Infinity,x:0,y:0};
+  for(let i=0;i<pts.length-1;i++){
+    const c = closestOnSegment(pts[i], pts[i+1], p);
+    if(c.d<best.d) best=c;
+  }
+  return best;
+}
+
+// ---- svg refs (created after load) ----
+let svg, routeLine, altLine, offRouteLine, snapMarker, userMarker, routeArrows;
+let currentRoutePts = null;
+let startTapped = false;
+let lastActualPoint = null;
+
+function destNodeKey(){ return document.getElementById('destSelect').value; }
+
+function showOffRouteLine(actual, snap){
+  if(snap.d < 4){ offRouteLine.setAttribute('opacity','0'); snapMarker.setAttribute('opacity','0'); return; }
+  offRouteLine.setAttribute('x1', actual.x); offRouteLine.setAttribute('y1', actual.y);
+  offRouteLine.setAttribute('x2', snap.x); offRouteLine.setAttribute('y2', snap.y);
+  offRouteLine.setAttribute('opacity','1');
+  snapMarker.setAttribute('cx', snap.x); snapMarker.setAttribute('cy', snap.y);
+  snapMarker.setAttribute('opacity','1');
+}
+
+function drawArrowsAlongPath(pts, spacing){
+  routeArrows.innerHTML = '';
+  let segLens = [], total = 0;
+  for(let i=0;i<pts.length-1;i++){ const l=dist(pts[i],pts[i+1]); segLens.push(l); total+=l; }
+  if(total < spacing*0.6) return;
+  let nextMark = spacing*0.6, covered = 0;
+  for(let i=0;i<pts.length-1;i++){
+    const a=pts[i], b=pts[i+1], segLen=segLens[i];
+    const angle = Math.atan2(b.y-a.y, b.x-a.x) * 180/Math.PI;
+    while(nextMark <= covered + segLen){
+      const t=(nextMark-covered)/segLen;
+      const x=a.x+(b.x-a.x)*t, y=a.y+(b.y-a.y)*t;
+      const tri = document.createElementNS('http://www.w3.org/2000/svg','path');
+      tri.setAttribute('d','M -6,-5 L 6,0 L -6,5 Z');
+      tri.setAttribute('fill','#fdfaf3');
+      tri.setAttribute('stroke','#7a3320');
+      tri.setAttribute('stroke-width','1');
+      tri.setAttribute('stroke-linejoin','round');
+      tri.setAttribute('transform', `translate(${x},${y}) rotate(${angle})`);
+      routeArrows.appendChild(tri);
+      nextMark += spacing;
+    }
+    covered += segLen;
+  }
+}
+
+function drawRoute(actual, snap){
+  const endNode = destNodeKey();
+  if(!endNode) return;
+  const nearerNode = dist(snap, nodes[snap.edgeA]) < dist(snap, nodes[snap.edgeB]) ? snap.edgeA : snap.edgeB;
+
+  let candidates = allSimplePaths(nearerNode, endNode).map(r=>{
+    const pts = [{x:snap.x,y:snap.y}, nodes[nearerNode], ...r.path.slice(1).map(k=>nodes[k])];
+    return {pts, length: dist(snap,nodes[nearerNode]) + r.length};
+  });
+
+  if(candidates.length===0){ setStatus('noRoute','offtrack'); routeLine.setAttribute('opacity','0'); altLine.setAttribute('opacity','0'); return; }
+  candidates.sort((a,b)=>a.length-b.length);
+  const shortest = candidates[0];
+  const alt = candidates[1];
+  currentRoutePts = shortest.pts;
+
+  routeLine.setAttribute('d', 'M ' + shortest.pts.map(p=>`${p.x},${p.y}`).join(' L '));
+  routeLine.setAttribute('opacity','1');
+
+  if(alt){
+    altLine.setAttribute('d', 'M ' + alt.pts.map(p=>`${p.x},${p.y}`).join(' L '));
+    altLine.setAttribute('opacity','1');
+  } else altLine.setAttribute('opacity','0');
+
+  drawArrowsAlongPath(shortest.pts, 55);
+
+  const offRouteDist = dist(actual, snap);
+  const feet = Math.round((offRouteDist + shortest.length) * SCALE_FT_PER_PX);
+  const steps = Math.round(feet / STEP_LENGTH_FT);
+  document.getElementById('distFt').textContent = feet;
+  document.getElementById('distSteps').textContent = steps;
+  document.getElementById('distBar').style.display = 'flex';
+}
+
+function svgPoint(evt){
+  const rect = svg.getBoundingClientRect();
+  const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
+  const clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
+  const vb = svg.viewBox.baseVal;
+  const scaleX = vb.width/rect.width, scaleY = vb.height/rect.height;
+  return { x:(clientX-rect.left)*scaleX, y:(clientY-rect.top)*scaleY };
+}
+function placeUserMarker(x,y){
+  userMarker.setAttribute('transform', `translate(${x},${y})`);
+  userMarker.setAttribute('opacity','1');
+}
+
+function attachMapEvents(){
+  svg.addEventListener('click', (evt)=>{
+    const actual = svgPoint(evt);
+    lastActualPoint = actual;
+    placeUserMarker(actual.x, actual.y);
+    if(!startTapped){
+      const snap = snapToWalkway(actual);
+      if(!snap){ return; }
+      showOffRouteLine(actual, snap);
+      drawRoute(actual, snap);
+      startTapped = true;
+      setStatus('drawn');
+    } else {
+      if(!currentRoutePts){ return; }
+      const onRoute = closestPointOnPolyline(currentRoutePts, actual);
+      if(onRoute.d < ON_ROUTE_THRESHOLD_PX){
+        offRouteLine.setAttribute('opacity','0'); snapMarker.setAttribute('opacity','0');
+        setStatus('ontrack','ontrack');
+      } else {
+        showOffRouteLine(actual, onRoute);
+        setStatus('offtrack','offtrack');
+      }
+    }
+  });
+
+  document.getElementById('destSelect').addEventListener('change', ()=>{
+    if(startTapped && lastActualPoint){
+      const snap = snapToWalkway(lastActualPoint);
+      showOffRouteLine(lastActualPoint, snap);
+      drawRoute(lastActualPoint, snap);
+      setStatus('updated');
+    }
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', ()=>{
+    startTapped = false; currentRoutePts = null; lastActualPoint = null;
+    routeLine.setAttribute('opacity','0'); altLine.setAttribute('opacity','0');
+    offRouteLine.setAttribute('opacity','0'); snapMarker.setAttribute('opacity','0');
+    userMarker.setAttribute('opacity','0'); routeArrows.innerHTML = '';
+    document.getElementById('distBar').style.display = 'none';
+    setStatus('initial');
+  });
+}
+
+function buildSvg(){
+  const w = project.image_width, h = project.image_height;
+  document.getElementById('map').outerHTML = `<svg id="map" viewBox="0 0 ${w} ${h}"></svg>`;
+  svg = document.getElementById('map');
+  const rectW = Math.min(w, 720);
+  svg.style.width = rectW + 'px';
+  svg.style.height = (rectW * h/w) + 'px';
+
+  svg.innerHTML = `
+    <defs>
+      <marker id="arrowHeadDrift" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8 Z" fill="var(--offroute)"/>
+      </marker>
+    </defs>
+    <image href="${project.image_url}" x="0" y="0" width="${w}" height="${h}"/>
+    <g id="baseWalkways"></g>
+    <line id="offRouteLine" x1="0" y1="0" x2="0" y2="0" stroke="var(--offroute)" stroke-width="3" stroke-dasharray="6,6" opacity="0" marker-end="url(#arrowHeadDrift)"/>
+    <path id="altLine" d="" stroke="var(--path-light)" stroke-width="6" stroke-linecap="round" fill="none" opacity="0"/>
+    <path id="routeLine" d="" stroke="var(--path)" stroke-width="7" stroke-linecap="round" fill="none" opacity="0"/>
+    <g id="routeArrows"></g>
+    <circle id="snapMarker" cx="0" cy="0" r="5" fill="var(--offroute)" opacity="0"/>
+    <g id="nodeMarkers"></g>
+    <g id="userMarker" opacity="0">
+      <circle cx="0" cy="0" r="12" fill="#2f6fe8" opacity="0.25"/>
+      <circle cx="0" cy="0" r="7" fill="#2f6fe8" stroke="#fff" stroke-width="2"/>
+    </g>
+  `;
+  routeLine = document.getElementById('routeLine');
+  altLine = document.getElementById('altLine');
+  offRouteLine = document.getElementById('offRouteLine');
+  snapMarker = document.getElementById('snapMarker');
+  userMarker = document.getElementById('userMarker');
+  routeArrows = document.getElementById('routeArrows');
+
+  const baseWalkways = document.getElementById('baseWalkways');
+  edgeList.forEach(e=>{
+    const a = nodes[e.node_a], b = nodes[e.node_b];
+    if(!a||!b) return;
+    const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1',a.x); line.setAttribute('y1',a.y);
+    line.setAttribute('x2',b.x); line.setAttribute('y2',b.y);
+    line.setAttribute('stroke','#d8d2bf'); line.setAttribute('stroke-width','10');
+    line.setAttribute('stroke-linecap','round');
+    baseWalkways.appendChild(line);
+  });
+
+  const markerLayer = document.getElementById('nodeMarkers');
+  const colors = {gate:'var(--accent)', entrance:'var(--building-dark)', destination:'var(--path)'};
+  Object.entries(nodes).forEach(([id,n])=>{
+    if(n.type==='junction') return;
+    const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    c.setAttribute('cx',n.x); c.setAttribute('cy',n.y); c.setAttribute('r',9);
+    c.setAttribute('fill', colors[n.type]||'#999'); c.setAttribute('stroke','#fff'); c.setAttribute('stroke-width','2');
+    markerLayer.appendChild(c);
+    if(n.name){
+      const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+      t.setAttribute('x',n.x); t.setAttribute('y',n.y+22);
+      t.setAttribute('text-anchor','middle'); t.setAttribute('font-size','12'); t.setAttribute('font-weight','600');
+      t.textContent = n.name;
+      markerLayer.appendChild(t);
+    }
+  });
+
+  attachMapEvents();
+}
+
+function populateDestinations(){
+  const sel = document.getElementById('destSelect');
+  sel.innerHTML = '';
+  Object.entries(nodes)
+    .filter(([id,n]) => n.type!=='junction' && n.name)
+    .forEach(([id,n])=>{
+      const opt = document.createElement('option');
+      opt.value = id; opt.textContent = n.name;
+      sel.appendChild(opt);
+    });
+}
+
+async function loadProject(){
+  const params = new URLSearchParams(window.location.search);
+  const slug = params.get('p');
+  if(!slug){
+    document.getElementById('loadingMsg').textContent = 'No project specified. Use a valid RastaDekho link.';
+    return;
+  }
+  const { data: proj, error } = await sb.from('rd_projects').select('*').eq('slug', slug).single();
+  if(error || !proj){
+    document.getElementById('loadingMsg').textContent = 'Project not found.';
+    return;
+  }
+  project = proj;
+  document.getElementById('projTitle').innerHTML = proj.name + ' — Rasta<span style="color:var(--path)">Dekho</span>';
+
+  const { data: n } = await sb.from('rd_nodes').select('*').eq('project_id', proj.id);
+  const { data: e } = await sb.from('rd_edges').select('*').eq('project_id', proj.id);
+  nodes = {}; (n||[]).forEach(row => nodes[row.id] = row);
+  edgeList = e || [];
+  buildGraph();
+
+  document.getElementById('loadingMsg').style.display='none';
+  document.getElementById('appBody').style.display='flex';
+  buildSvg();
+  populateDestinations();
+  applyLanguage('en');
+}
+
+loadProject();
+</script>
+
+</body>
+</html>

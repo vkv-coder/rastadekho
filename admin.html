@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RastaDekho Admin</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root{
+    --ink:#1c2b2d; --paper:#f2efe6; --path:#c85a3c; --building:#2f6f5e;
+    --building-dark:#1f4f42; --accent:#e8a13d; --line:#cfc8b4; --junction:#8a5cf6;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Segoe UI',Arial,sans-serif;background:var(--paper);color:var(--ink);padding:16px;}
+  h1{font-size:1.3rem;margin:0 0 4px 0;}
+  h1 span{color:var(--path);}
+  .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;max-width:760px;margin:0 auto 14px auto;}
+  label{font-size:0.82rem;font-weight:600;display:block;margin-bottom:4px;}
+  input,select{width:100%;padding:8px;border-radius:6px;border:1px solid var(--line);font-size:0.9rem;margin-bottom:10px;}
+  button{padding:9px 14px;border:none;border-radius:8px;background:var(--building);color:#fff;font-weight:600;cursor:pointer;font-size:0.85rem;margin-right:6px;}
+  button.secondary{background:#fff;color:var(--ink);border:1px solid var(--line);}
+  button.danger{background:#c85a3c;}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .hint{font-size:0.78rem;color:#6b675a;margin-bottom:8px;}
+  #canvasWrap{max-width:760px;margin:0 auto 14px auto;overflow:auto;border:1px solid var(--line);border-radius:10px;background:#fff;}
+  svg{display:block;cursor:crosshair;background:#fff;}
+  .nodeList{max-height:220px;overflow-y:auto;font-size:0.8rem;border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:8px;}
+  .nodeItem{display:flex;justify-content:space-between;align-items:center;padding:4px 2px;border-bottom:1px solid #eee;}
+  .tag{padding:2px 6px;border-radius:4px;font-size:0.7rem;font-weight:700;color:#fff;}
+  .tag.gate{background:var(--accent);}
+  .tag.entrance{background:var(--building-dark);}
+  .tag.destination{background:var(--path);}
+  .tag.junction{background:var(--junction);}
+  #loginBox{max-width:340px;margin:80px auto;}
+  #qrBox{text-align:center;margin-top:10px;}
+  .linkbox{font-size:0.82rem;background:#f7f4ea;border:1px solid var(--line);border-radius:6px;padding:8px;word-break:break-all;}
+</style>
+</head>
+<body>
+
+<div id="loginBox" class="card">
+  <h1>Rasta<span>Dekho</span> Admin</h1>
+  <label>Admin password</label>
+  <input type="password" id="pwInput" placeholder="Enter password">
+  <button onclick="tryLogin()">Login</button>
+  <div class="hint" id="loginError" style="color:#a3341a;"></div>
+</div>
+
+<div id="mainApp" style="display:none;">
+  <h1 style="text-align:center;">Rasta<span>Dekho</span> Admin</h1>
+
+  <div class="card">
+    <label>Select project</label>
+    <select id="projectSelect" onchange="loadProject()"></select>
+    <div class="row">
+      <button class="secondary" onclick="showNewProject()">+ New Project</button>
+    </div>
+    <div id="newProjectForm" style="display:none;margin-top:10px;">
+      <label>Project name (e.g. City General Hospital)</label>
+      <input id="newProjName" placeholder="Project name">
+      <label>Layout image</label>
+      <input type="file" id="newProjImage" accept="image/*">
+      <button onclick="createProject()">Create Project</button>
+    </div>
+  </div>
+
+  <div class="card" id="editorCard" style="display:none;">
+    <div class="row" style="justify-content:space-between;">
+      <div>
+        <label style="margin-bottom:0;">Mode</label>
+        <select id="modeSelect">
+          <option value="node">Place Point</option>
+          <option value="edge">Draw Walkway (tap 2 points)</option>
+        </select>
+      </div>
+      <div id="nodeTypeWrap">
+        <label style="margin-bottom:0;">Point type</label>
+        <select id="nodeType">
+          <option value="gate">Gate</option>
+          <option value="entrance">Building Entrance</option>
+          <option value="destination">Destination / Ward</option>
+          <option value="junction">Walkway Junction (no label)</option>
+        </select>
+      </div>
+    </div>
+    <div class="hint">Place mode: tap the image to add a point (junctions need no name). Walkway mode: tap one point then another to connect them.</div>
+
+    <div id="canvasWrap">
+      <svg id="mapSvg"></svg>
+    </div>
+
+    <div class="row">
+      <button class="danger secondary" onclick="undoLast()">Undo Last</button>
+      <button class="secondary" onclick="loadProject()">Refresh</button>
+    </div>
+
+    <div class="nodeList" id="nodeList"></div>
+
+    <div id="qrBox" style="display:none;">
+      <label>Visitor link for this project</label>
+      <div class="linkbox" id="visitorLink"></div>
+      <div id="qrcode" style="margin-top:10px;display:inline-block;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://jqqnnkzozjskziaizajg.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcW5ua3pvempza3ppYWl6YWpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5Mjk1ODAsImV4cCI6MjA4ODUwNTU4MH0.sEYeWnm0dvuw8bLSVnQhqmgV8LB-pELjpuVIa3Us1Gg';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const ADMIN_PASSWORD = 'rasta@admin2026';
+const VISITOR_BASE_URL = 'https://vkv-coder.github.io/rastadekho/visitor.html';
+
+function tryLogin(){
+  const v = document.getElementById('pwInput').value;
+  if(v === ADMIN_PASSWORD){
+    document.getElementById('loginBox').style.display='none';
+    document.getElementById('mainApp').style.display='block';
+    loadProjectList();
+  } else {
+    document.getElementById('loginError').textContent = 'Wrong password.';
+  }
+}
+
+let currentProject = null;
+let nodes = [];
+let edges = [];
+let pendingEdgeNode = null;
+
+function slugify(str){
+  return str.toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
+}
+
+async function loadProjectList(){
+  const { data, error } = await sb.from('rd_projects').select('*').order('created_at',{ascending:true});
+  const sel = document.getElementById('projectSelect');
+  sel.innerHTML = '<option value="">-- select --</option>';
+  (data||[]).forEach(p=>{
+    const opt = document.createElement('option');
+    opt.value = p.id; opt.textContent = p.name;
+    sel.appendChild(opt);
+  });
+}
+
+function showNewProject(){
+  document.getElementById('newProjectForm').style.display='block';
+}
+
+async function createProject(){
+  const name = document.getElementById('newProjName').value.trim();
+  const file = document.getElementById('newProjImage').files[0];
+  if(!name || !file){ alert('Enter a name and choose an image.'); return; }
+  const slug = slugify(name) + '-' + Date.now().toString(36);
+
+  const path = `${slug}/${file.name}`;
+  const { error: upErr } = await sb.storage.from('rd-layouts').upload(path, file);
+  if(upErr){ alert('Image upload failed: ' + upErr.message); return; }
+  const { data: pub } = sb.storage.from('rd-layouts').getPublicUrl(path);
+
+  const img = new Image();
+  img.onload = async ()=>{
+    const { data, error } = await sb.from('rd_projects').insert({
+      name, slug, image_url: pub.publicUrl, image_width: img.width, image_height: img.height
+    }).select().single();
+    if(error){ alert('Could not create project: ' + error.message); return; }
+    document.getElementById('newProjectForm').style.display='none';
+    await loadProjectList();
+    document.getElementById('projectSelect').value = data.id;
+    loadProject();
+  };
+  img.src = pub.publicUrl;
+}
+
+async function loadProject(){
+  const id = document.getElementById('projectSelect').value;
+  if(!id){ document.getElementById('editorCard').style.display='none'; return; }
+  const { data: proj } = await sb.from('rd_projects').select('*').eq('id',id).single();
+  currentProject = proj;
+  const { data: n } = await sb.from('rd_nodes').select('*').eq('project_id',id);
+  const { data: e } = await sb.from('rd_edges').select('*').eq('project_id',id);
+  nodes = n || []; edges = e || [];
+  document.getElementById('editorCard').style.display='block';
+  renderCanvas();
+  renderNodeList();
+  renderQr();
+}
+
+function renderQr(){
+  const link = `${VISITOR_BASE_URL}?p=${currentProject.slug}`;
+  document.getElementById('qrBox').style.display='block';
+  document.getElementById('visitorLink').textContent = link;
+  document.getElementById('qrcode').innerHTML = '';
+  new QRCode(document.getElementById('qrcode'), { text: link, width:140, height:140 });
+}
+
+function renderCanvas(){
+  const svg = document.getElementById('mapSvg');
+  const w = currentProject.image_width, h = currentProject.image_height;
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.setAttribute('width', Math.min(w,760));
+  svg.setAttribute('height', Math.min(w,760) * (h/w));
+  svg.innerHTML = `
+    <image href="${currentProject.image_url}" x="0" y="0" width="${w}" height="${h}"/>
+    <g id="edgeLayer"></g>
+    <g id="nodeLayer"></g>
+  `;
+  const edgeLayer = svg.querySelector('#edgeLayer');
+  edges.forEach(e=>{
+    const a = nodes.find(n=>n.id===e.node_a), b = nodes.find(n=>n.id===e.node_b);
+    if(!a||!b) return;
+    const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1',a.x); line.setAttribute('y1',a.y);
+    line.setAttribute('x2',b.x); line.setAttribute('y2',b.y);
+    line.setAttribute('stroke','#d8d2bf'); line.setAttribute('stroke-width','8');
+    line.setAttribute('stroke-linecap','round');
+    edgeLayer.appendChild(line);
+  });
+  const nodeLayer = svg.querySelector('#nodeLayer');
+  const colors = {gate:'var(--accent)', entrance:'var(--building-dark)', destination:'var(--path)', junction:'var(--junction)'};
+  nodes.forEach(n=>{
+    const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    c.setAttribute('cx',n.x); c.setAttribute('cy',n.y);
+    c.setAttribute('r', n.type==='junction' ? 6 : 10);
+    c.setAttribute('fill', colors[n.type] || '#999');
+    c.setAttribute('stroke','#fff'); c.setAttribute('stroke-width','2');
+    nodeLayer.appendChild(c);
+    if(n.name){
+      const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+      t.setAttribute('x',n.x); t.setAttribute('y',n.y-14);
+      t.setAttribute('text-anchor','middle'); t.setAttribute('font-size','12');
+      t.setAttribute('font-weight','700'); t.setAttribute('fill','#1c2b2d');
+      t.textContent = n.name;
+      nodeLayer.appendChild(t);
+    }
+  });
+
+  svg.onclick = async (evt)=>{
+    const rect = svg.getBoundingClientRect();
+    const scaleX = w/rect.width, scaleY = h/rect.height;
+    const x = (evt.clientX-rect.left)*scaleX, y=(evt.clientY-rect.top)*scaleY;
+    const mode = document.getElementById('modeSelect').value;
+
+    if(mode==='node'){
+      const type = document.getElementById('nodeType').value;
+      let name = '';
+      if(type!=='junction'){
+        name = prompt('Name for this point (e.g. Main Gate, X-Ray, Ward 3B):');
+        if(name===null) return;
+      }
+      const { data, error } = await sb.from('rd_nodes').insert({
+        project_id: currentProject.id, type, name, x: Math.round(x), y: Math.round(y)
+      }).select().single();
+      if(error){ alert(error.message); return; }
+      nodes.push(data);
+      renderCanvas(); renderNodeList();
+    } else {
+      // edge mode: find nearest existing node to the tap
+      let nearest=null, bestD=Infinity;
+      nodes.forEach(n=>{
+        const d = Math.hypot(n.x-x, n.y-y);
+        if(d<bestD){ bestD=d; nearest=n; }
+      });
+      if(!nearest || bestD>30){ alert('Tap closer to an existing point to connect it.'); return; }
+      if(!pendingEdgeNode){
+        pendingEdgeNode = nearest;
+      } else {
+        if(pendingEdgeNode.id === nearest.id){ pendingEdgeNode=null; return; }
+        const { data, error } = await sb.from('rd_edges').insert({
+          project_id: currentProject.id, node_a: pendingEdgeNode.id, node_b: nearest.id
+        }).select().single();
+        if(!error){ edges.push(data); }
+        pendingEdgeNode = null;
+        renderCanvas();
+      }
+    }
+  };
+}
+
+function renderNodeList(){
+  const box = document.getElementById('nodeList');
+  box.innerHTML = '';
+  nodes.forEach(n=>{
+    const div = document.createElement('div');
+    div.className='nodeItem';
+    div.innerHTML = `<span><span class="tag ${n.type}">${n.type}</span> ${n.name||'(junction)'}</span>
+      <button class="secondary danger" style="padding:3px 8px;font-size:0.7rem;" onclick="deleteNode('${n.id}')">Delete</button>`;
+    box.appendChild(div);
+  });
+}
+
+async function deleteNode(id){
+  if(!confirm('Delete this point and its connected walkways?')) return;
+  await sb.from('rd_edges').delete().or(`node_a.eq.${id},node_b.eq.${id}`);
+  await sb.from('rd_nodes').delete().eq('id', id);
+  loadProject();
+}
+
+async function undoLast(){
+  if(edges.length && document.getElementById('modeSelect').value==='edge'){
+    const last = edges[edges.length-1];
+    await sb.from('rd_edges').delete().eq('id', last.id);
+  } else if(nodes.length){
+    const last = nodes[nodes.length-1];
+    await deleteNode(last.id);
+    return;
+  }
+  loadProject();
+}
+</script>
+
+</body>
+</html>
