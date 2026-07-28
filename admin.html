@@ -57,20 +57,31 @@
 
 <div id="loginBox" class="card">
   <h1>Rasta<span>Dekho</span> Admin</h1>
-  <label>Admin password</label>
+  <label>Email</label>
+  <input type="email" id="emailInput" placeholder="you@example.com" value="unigoods2026@gmail.com">
+  <label>Password</label>
   <input type="password" id="pwInput" placeholder="Enter password">
   <button onclick="tryLogin()">Login</button>
   <div class="hint" id="loginError" style="color:#a3341a;"></div>
   <div class="hint" style="margin-top:10px;">
-    <a href="#" onclick="showForgotPassword(); return false;" style="color:#2f6f5e;">Forgot password?</a>
+    <a href="#" onclick="sendPasswordReset(); return false;" style="color:#2f6f5e;">Forgot password?</a>
   </div>
-  <div class="hint" id="forgotBox" style="display:none;margin-top:6px;">
-    Contact support to recover access: <a href="mailto:vkvcoder.support@gmail.com">vkvcoder.support@gmail.com</a>
-  </div>
+  <div class="hint" id="forgotBox" style="display:none;margin-top:6px;"></div>
+</div>
+
+<div id="resetPasswordBox" class="card" style="display:none;max-width:340px;margin:80px auto;">
+  <h1>Set New Password</h1>
+  <label>New password</label>
+  <input type="password" id="newPwInput" placeholder="Enter a new password">
+  <button onclick="submitNewPassword()">Update Password</button>
+  <div class="hint" id="resetStatus"></div>
 </div>
 
 <div id="mainApp" style="display:none;">
   <h1>Rasta<span>Dekho</span> Admin</h1>
+  <div style="text-align:center;margin-bottom:10px;">
+    <button class="secondary" onclick="logout()">Logout</button>
+  </div>
 
   <div class="card">
     <label>Select project</label>
@@ -151,21 +162,66 @@ const SUPABASE_URL = 'https://jqqnnkzozjskziaizajg.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcW5ua3pvempza3ppYWl6YWpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5Mjk1ODAsImV4cCI6MjA4ODUwNTU4MH0.sEYeWnm0dvuw8bLSVnQhqmgV8LB-pELjpuVIa3Us1Gg';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const ADMIN_PASSWORD = 'rasta@admin2026';
 const VISITOR_BASE_URL = 'https://vkv-coder.github.io/rastadekho/visitor.html';
+const ADMIN_URL = 'https://vkv-coder.github.io/rastadekho/admin.html';
 
-function showForgotPassword(){ document.getElementById('forgotBox').style.display = 'block'; }
-
-function tryLogin(){
-  const v = document.getElementById('pwInput').value;
-  if(v === ADMIN_PASSWORD){
-    document.getElementById('loginBox').style.display='none';
-    document.getElementById('mainApp').style.display='block';
-    loadProjectList();
-  } else {
-    document.getElementById('loginError').textContent = 'Wrong password.';
+async function tryLogin(){
+  const email = document.getElementById('emailInput').value.trim();
+  const password = document.getElementById('pwInput').value;
+  document.getElementById('loginError').textContent = '';
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if(error){
+    document.getElementById('loginError').textContent = error.message;
+    return;
   }
+  showMainApp();
 }
+
+async function sendPasswordReset(){
+  const email = document.getElementById('emailInput').value.trim();
+  const box = document.getElementById('forgotBox');
+  if(!email){ box.style.display='block'; box.textContent = 'Enter your email above first, then click Forgot password? again.'; return; }
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: ADMIN_URL });
+  box.style.display = 'block';
+  box.textContent = error ? ('Error: ' + error.message) : `A password reset link has been sent to ${email}. Open it, then come back here to set your new password.`;
+}
+
+async function submitNewPassword(){
+  const newPw = document.getElementById('newPwInput').value;
+  const status = document.getElementById('resetStatus');
+  if(!newPw || newPw.length < 6){ status.textContent = 'Password must be at least 6 characters.'; return; }
+  const { error } = await sb.auth.updateUser({ password: newPw });
+  if(error){ status.textContent = 'Error: ' + error.message; return; }
+  status.textContent = 'Password updated. You can now log in normally.';
+  setTimeout(()=>{ window.location.href = ADMIN_URL; }, 2000);
+}
+
+async function logout(){
+  await sb.auth.signOut();
+  window.location.href = ADMIN_URL;
+}
+
+function showMainApp(){
+  document.getElementById('loginBox').style.display='none';
+  document.getElementById('resetPasswordBox').style.display='none';
+  document.getElementById('mainApp').style.display='block';
+  loadProjectList();
+}
+
+// Handle password-recovery links (when the person clicks the emailed reset link)
+sb.auth.onAuthStateChange((event, session)=>{
+  if(event === 'PASSWORD_RECOVERY'){
+    document.getElementById('loginBox').style.display='none';
+    document.getElementById('mainApp').style.display='none';
+    document.getElementById('resetPasswordBox').style.display='block';
+  }
+});
+
+// If already logged in (existing session), skip straight to the admin panel
+(async ()=>{
+  const { data } = await sb.auth.getSession();
+  if(data.session){ showMainApp(); }
+})();
 
 let currentProject = null;
 let nodes = [];
