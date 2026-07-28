@@ -36,7 +36,8 @@
   #qrBox{text-align:center;margin-top:10px;}
   .linkbox{font-size:0.82rem;background:#f7f4ea;border:1px solid var(--line);border-radius:6px;padding:8px;word-break:break-all;}
 
-  .stepBar{display:flex;gap:6px;margin-bottom:10px;}
+  .stepBar{display:flex;gap:6px;margin-bottom:10px;align-items:center;}
+  .stepArrow{font-size:1.1rem;color:#8a8672;font-weight:700;}
   .stepDot{flex:1;text-align:center;padding:8px 4px;border-radius:8px;background:#f2efe6;font-size:0.78rem;font-weight:700;border:1px solid var(--line);color:#8a8672;}
   .stepDot.active{background:var(--building);color:#fff;border-color:var(--building);}
   .stepDot.done{background:#e5f3ea;color:#1f6b3a;border-color:#8fc9a1;}
@@ -88,9 +89,11 @@
   <div class="card" id="editorCard" style="display:none;">
 
     <div class="stepBar">
-      <div class="stepDot" id="stepDot1">1. Gates &amp; Entrances</div>
-      <div class="stepDot" id="stepDot2">2. Road Junctions</div>
-      <div class="stepDot" id="stepDot3">3. Connect the Path</div>
+      <div class="stepDot" id="stepDot1" onclick="goStep(1)" style="cursor:pointer;">1. Gates &amp; Entrances</div>
+      <div class="stepArrow">→</div>
+      <div class="stepDot" id="stepDot2" onclick="goStep(2)" style="cursor:pointer;">2. Road Junctions</div>
+      <div class="stepArrow">→</div>
+      <div class="stepDot" id="stepDot3" onclick="goStep(3)" style="cursor:pointer;">3. Connect the Path</div>
     </div>
 
     <div class="instruction" id="instructionBox"></div>
@@ -100,10 +103,8 @@
     </div>
 
     <div class="row">
-      <button class="secondary" id="backStepBtn" onclick="goStep(currentStep-1)">Back</button>
-      <button id="nextStepBtn" onclick="goStep(currentStep+1)">Next Step</button>
-      <button class="danger secondary" onclick="undoLast()">Undo Last</button>
-      <button class="secondary" onclick="loadProject()">Refresh</button>
+      <button class="danger secondary" onclick="undoLast()">Undo Last (removes most recent tap/connection immediately)</button>
+      <button class="secondary" onclick="loadProject()">Reload from Server (only needed if edited elsewhere)</button>
     </div>
 
     <div class="nodeList" id="nodeList"></div>
@@ -236,8 +237,6 @@ function goStep(step){
     if(s===step) dot.classList.add('active');
   });
   document.getElementById('instructionBox').textContent = STEP_INSTRUCTIONS[step];
-  document.getElementById('backStepBtn').disabled = step===1;
-  document.getElementById('nextStepBtn').textContent = step===3 ? 'Done' : 'Next Step';
   renderCanvas();
 }
 
