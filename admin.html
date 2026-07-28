@@ -6,6 +6,7 @@
 <title>RastaDekho Admin</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   :root{
     --ink:#1c2b2d; --paper:#f2efe6; --path:#c85a3c; --building:#2f6f5e;
@@ -114,6 +115,15 @@
     </div>
 
     <div class="nodeList" id="nodeList"></div>
+
+    <div class="card" style="margin-top:14px;">
+      <label>Bilingual Names</label>
+      <div class="hint">Step 1: Download the names sheet (Sr. No + English Name are already filled in from what you entered on the map). Step 2: Open it, type in the Gujarati Name column, save. Step 3: Upload it back here.</div>
+      <button class="secondary" onclick="downloadNamesExcel()">1. Download Names Sheet</button>
+      <input type="file" id="namesExcelFile" accept=".xlsx,.xls" style="margin-top:10px;">
+      <button onclick="uploadNamesExcel()">2. Upload Completed Sheet</button>
+      <div class="hint" id="excelUploadStatus"></div>
+    </div>
 
     <div id="qrBox" style="display:none;">
       <label>Visitor link for this project</label>
@@ -340,7 +350,7 @@ function renderCanvas(){
       pendingTapCoords = {x,y};
       openTypePopup();
     } else if(currentStep===2){
-      placeNode('junction', '', x, y);
+      placeNode('junction', null, '', x, y);
     } else if(currentStep===3){
       handleChainTap(x,y);
     }
@@ -360,18 +370,78 @@ function openTypePopup(){ document.getElementById('typePopup').style.display='fl
 function closeTypePopup(){ document.getElementById('typePopup').style.display='none'; }
 function cancelTypePopup(){ closeTypePopup(); pendingTapCoords=null; }
 
+function downloadNamesExcel(){
+  const rows = nodes
+    .filter(n => n.type !== 'junction')
+    .sort((a,b) => (a.serial_no||0) - (b.serial_no||0))
+    .map(n => ({
+      'Sr. No': n.serial_no ?? '',
+      'English Name': n.name_en || '',
+      'Gujarati Name': n.name_gu || ''
+    }));
+
+  if(!rows.length){ alert('No Gate/Entrance points to export yet.'); return; }
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Names');
+  XLSX.writeFile(wb, `${currentProject.slug}-names.xlsx`);
+}
+
+async function uploadNamesExcel(){
+  const file = document.getElementById('namesExcelFile').files[0];
+  const statusBox = document.getElementById('excelUploadStatus');
+  if(!file){ statusBox.textContent = 'Choose an Excel file first.'; return; }
+
+  statusBox.textContent = 'Reading file...';
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, {type:'array'});
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, {defval:''});
+
+  if(!rows.length){ statusBox.textContent = 'No rows found in the sheet.'; return; }
+
+  let updated = 0, notFound = [];
+  for(const row of rows){
+    const serial = parseInt(row['Sr. No'] ?? row['Sr No'] ?? row['Serial No'] ?? row['SR.NO'], 10);
+    const nameEn = (row['English Name'] ?? '').toString().trim();
+    const nameGu = (row['Gujarati Name'] ?? '').toString().trim();
+    if(isNaN(serial)) continue;
+
+    const match = nodes.find(n => n.serial_no === serial);
+    if(!match){ notFound.push(serial); continue; }
+
+    const { error } = await sb.from('rd_nodes').update({
+      name_en: nameEn, name_gu: nameGu, name: nameEn
+    }).eq('id', match.id);
+    if(!error){
+      match.name_en = nameEn; match.name_gu = nameGu; match.name = nameEn;
+      updated++;
+    }
+  }
+
+  statusBox.textContent = `Updated ${updated} point(s).` + (notFound.length ? ` No matching point found for Sr. No: ${notFound.join(', ')}.` : '');
+  renderCanvas(); renderNodeList();
+}
+
 async function chooseType(type){
   const coords = pendingTapCoords;
   closeTypePopup();
-  const name = prompt('Name for this point (e.g. Main Gate, OPD Block Entrance):');
-  if(name===null || !coords) return;
-  await placeNode(type, name, coords.x, coords.y);
+  const serialStr = prompt('Serial No. for this point (e.g. 1, 2, 3):');
+  if(serialStr===null || !coords) return;
+  const serial_no = parseInt(serialStr.trim(), 10);
+  if(isNaN(serial_no)){ alert('Please enter a plain number.'); return; }
+  const nameEn = prompt('English name for this point (e.g. Main Gate, OPD Block Entrance):');
+  if(nameEn===null) return;
+  await placeNode(type, serial_no, nameEn.trim(), coords.x, coords.y);
   pendingTapCoords = null;
 }
 
-async function placeNode(type, name, x, y){
+async function placeNode(type, serial_no, nameEn, x, y){
   const { data, error } = await sb.from('rd_nodes').insert({
-    project_id: currentProject.id, type, name, x: Math.round(x), y: Math.round(y)
+    project_id: currentProject.id, type, serial_no,
+    name_en: nameEn || '', name: nameEn || '',
+    x: Math.round(x), y: Math.round(y)
   }).select().single();
   if(error){ alert(error.message); return; }
   nodes.push(data);
@@ -415,7 +485,13 @@ function renderNodeList(){
   nodes.forEach((n,i)=>{
     const div = document.createElement('div');
     div.className='nodeItem';
-    div.innerHTML = `<span style="cursor:pointer;" onclick="highlightNode('${n.id}')"><b>#${i+1}</b> <span class="tag ${n.type}">${n.type}</span> ${n.name||'(junction)'} <span style="color:#8a8672;font-size:0.7rem;">(tap to highlight)</span></span>
+    let label = '(junction)';
+    if(n.type!=='junction'){
+      const en = n.name_en || '';
+      const gu = n.name_gu || '';
+      label = `Sr.${n.serial_no ?? '?'}` + (en ? ` — ${en}` : ' — (name pending)') + (gu ? ` / ${gu}` : '');
+    }
+    div.innerHTML = `<span style="cursor:pointer;" onclick="highlightNode('${n.id}')"><b>#${i+1}</b> <span class="tag ${n.type}">${n.type}</span> ${label} <span style="color:#8a8672;font-size:0.7rem;">(tap to highlight)</span></span>
       <button class="secondary danger" style="padding:3px 8px;font-size:0.7rem;" onclick="deleteNode('${n.id}')">Delete</button>`;
     box.appendChild(div);
   });

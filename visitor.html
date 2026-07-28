@@ -121,6 +121,20 @@ function applyLanguage(lang){
   document.getElementById('langEN').classList.toggle('active', lang==='en');
   document.getElementById('langGU').classList.toggle('active', lang==='gu');
   refreshStatusText();
+
+  // refresh destination dropdown labels + map labels to the newly selected language, keeping current selection
+  if(typeof nodes !== 'undefined' && Object.keys(nodes).length){
+    const sel = document.getElementById('destSelect');
+    const prevValue = sel.value;
+    populateDestinations();
+    if(prevValue) sel.value = prevValue;
+
+    document.querySelectorAll('.node-label').forEach(el=>{
+      const id = el.getAttribute('data-node-id');
+      const n = nodes[id];
+      if(n) el.textContent = displayName(n);
+    });
+  }
 }
 function refreshStatusText(){ statusBox.textContent = T[currentLang][lastStatusKey] || T[currentLang].initial; }
 function setStatus(key, cls){
@@ -418,6 +432,11 @@ function buildSvg(){
     baseWalkways.appendChild(line);
   });
 
+function displayName(n){
+  if(currentLang==='gu' && n.name_gu){ return n.name_gu; }
+  return n.name_en || n.name || '';
+}
+
   const markerLayer = document.getElementById('nodeMarkers');
   const colors = {gate:'var(--accent)', entrance:'var(--building-dark)', destination:'var(--path)'};
   Object.entries(nodes).forEach(([id,n])=>{
@@ -426,11 +445,14 @@ function buildSvg(){
     c.setAttribute('cx',n.x); c.setAttribute('cy',n.y); c.setAttribute('r',9);
     c.setAttribute('fill', colors[n.type]||'#999'); c.setAttribute('stroke','#fff'); c.setAttribute('stroke-width','2');
     markerLayer.appendChild(c);
-    if(n.name){
+    const label = displayName(n);
+    if(label){
       const t = document.createElementNS('http://www.w3.org/2000/svg','text');
       t.setAttribute('x',n.x); t.setAttribute('y',n.y+22);
       t.setAttribute('text-anchor','middle'); t.setAttribute('font-size','12'); t.setAttribute('font-weight','600');
-      t.textContent = n.name;
+      t.setAttribute('class','node-label');
+      t.setAttribute('data-node-id', id);
+      t.textContent = label;
       markerLayer.appendChild(t);
     }
   });
@@ -442,10 +464,11 @@ function populateDestinations(){
   const sel = document.getElementById('destSelect');
   sel.innerHTML = '';
   Object.entries(nodes)
-    .filter(([id,n]) => n.type!=='junction' && n.name)
+    .filter(([id,n]) => n.type!=='junction' && (n.name_en || n.name))
     .forEach(([id,n])=>{
       const opt = document.createElement('option');
-      opt.value = id; opt.textContent = n.name;
+      opt.value = id; opt.textContent = displayName(n);
+      opt.setAttribute('data-node-id', id);
       sel.appendChild(opt);
     });
 }
