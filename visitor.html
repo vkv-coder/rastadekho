@@ -267,12 +267,20 @@ function drawArrowsAlongPath(pts, spacing){
 function drawRoute(actual, snap){
   const endNode = destNodeKey();
   if(!endNode) return;
-  const nearerNode = dist(snap, nodes[snap.edgeA]) < dist(snap, nodes[snap.edgeB]) ? snap.edgeA : snap.edgeB;
 
-  let candidates = findRoutes(nearerNode, endNode).map(r=>{
-    const pts = [{x:snap.x,y:snap.y}, nodes[nearerNode], ...r.path.slice(1).map(k=>nodes[k])];
-    return {pts, length: dist(snap,nodes[nearerNode]) + r.length};
-  });
+  // Try starting from BOTH ends of the tapped road segment, and keep whichever
+  // gives the genuinely shorter total route to the destination (not just the
+  // geometrically closer end, which can be misleading).
+  const optionsFromEnds = [snap.edgeA, snap.edgeB].map(endpointKey=>{
+    const routes = findRoutes(endpointKey, endNode);
+    const toEndpointDist = dist(snap, nodes[endpointKey]);
+    return routes.map(r=>{
+      const pts = [{x:snap.x,y:snap.y}, nodes[endpointKey], ...r.path.slice(1).map(k=>nodes[k])];
+      return {pts, length: toEndpointDist + r.length};
+    });
+  }).flat();
+
+  let candidates = optionsFromEnds;
 
   if(candidates.length===0){
     setStatus('noRoute','offtrack');
@@ -284,7 +292,8 @@ function drawRoute(actual, snap){
   }
   candidates.sort((a,b)=>a.length-b.length);
   const shortest = candidates[0];
-  const alt = candidates[1];
+  const shortestKey = shortest.pts.map(p=>`${p.x},${p.y}`).join('|');
+  const alt = candidates.find(c => c.pts.map(p=>`${p.x},${p.y}`).join('|') !== shortestKey);
   currentRoutePts = shortest.pts;
 
   routeLine.setAttribute('d', 'M ' + shortest.pts.map(p=>`${p.x},${p.y}`).join(' L '));
