@@ -9,32 +9,46 @@
 <style>
   :root{
     --ink:#1c2b2d; --paper:#f2efe6; --path:#c85a3c; --building:#2f6f5e;
-    --building-dark:#1f4f42; --accent:#e8a13d; --line:#cfc8b4; --junction:#8a5cf6;
+    --building-dark:#1f4f42; --accent:#e8a13d; --line:#cfc8b4; --junction:#a89a7c;
   }
   *{box-sizing:border-box;}
   body{margin:0;font-family:'Segoe UI',Arial,sans-serif;background:var(--paper);color:var(--ink);padding:16px;}
-  h1{font-size:1.3rem;margin:0 0 4px 0;}
+  h1{font-size:1.3rem;margin:0 0 4px 0;text-align:center;}
   h1 span{color:var(--path);}
-  .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;max-width:760px;margin:0 auto 14px auto;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;max-width:780px;margin:0 auto 14px auto;}
   label{font-size:0.82rem;font-weight:600;display:block;margin-bottom:4px;}
   input,select{width:100%;padding:8px;border-radius:6px;border:1px solid var(--line);font-size:0.9rem;margin-bottom:10px;}
   button{padding:9px 14px;border:none;border-radius:8px;background:var(--building);color:#fff;font-weight:600;cursor:pointer;font-size:0.85rem;margin-right:6px;}
   button.secondary{background:#fff;color:var(--ink);border:1px solid var(--line);}
   button.danger{background:#c85a3c;}
+  button:disabled{opacity:0.4;cursor:not-allowed;}
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
   .hint{font-size:0.78rem;color:#6b675a;margin-bottom:8px;}
-  #canvasWrap{max-width:760px;margin:0 auto 14px auto;overflow:auto;border:1px solid var(--line);border-radius:10px;background:#fff;}
+  #canvasWrap{max-width:780px;margin:0 auto 14px auto;overflow:auto;border:1px solid var(--line);border-radius:10px;background:#fff;}
   svg{display:block;cursor:crosshair;background:#fff;}
-  .nodeList{max-height:220px;overflow-y:auto;font-size:0.8rem;border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:8px;}
+  .nodeList{max-height:200px;overflow-y:auto;font-size:0.8rem;border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:8px;}
   .nodeItem{display:flex;justify-content:space-between;align-items:center;padding:4px 2px;border-bottom:1px solid #eee;}
   .tag{padding:2px 6px;border-radius:4px;font-size:0.7rem;font-weight:700;color:#fff;}
   .tag.gate{background:var(--accent);}
   .tag.entrance{background:var(--building-dark);}
-  .tag.destination{background:var(--path);}
   .tag.junction{background:var(--junction);}
   #loginBox{max-width:340px;margin:80px auto;}
   #qrBox{text-align:center;margin-top:10px;}
   .linkbox{font-size:0.82rem;background:#f7f4ea;border:1px solid var(--line);border-radius:6px;padding:8px;word-break:break-all;}
+
+  .stepBar{display:flex;gap:6px;margin-bottom:10px;}
+  .stepDot{flex:1;text-align:center;padding:8px 4px;border-radius:8px;background:#f2efe6;font-size:0.78rem;font-weight:700;border:1px solid var(--line);color:#8a8672;}
+  .stepDot.active{background:var(--building);color:#fff;border-color:var(--building);}
+  .stepDot.done{background:#e5f3ea;color:#1f6b3a;border-color:#8fc9a1;}
+  .instruction{background:#fbf6ea;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:0.85rem;margin-bottom:10px;}
+
+  /* tap-type popup */
+  #typePopup{
+    position:fixed;inset:0;background:rgba(0,0,0,0.35);display:none;
+    align-items:center;justify-content:center;z-index:50;
+  }
+  #typePopup .box{background:#fff;border-radius:10px;padding:18px;max-width:300px;width:90%;}
+  #typePopup button{width:100%;margin:4px 0;}
 </style>
 </head>
 <body>
@@ -54,7 +68,7 @@
 </div>
 
 <div id="mainApp" style="display:none;">
-  <h1 style="text-align:center;">Rasta<span>Dekho</span> Admin</h1>
+  <h1>Rasta<span>Dekho</span> Admin</h1>
 
   <div class="card">
     <label>Select project</label>
@@ -72,31 +86,22 @@
   </div>
 
   <div class="card" id="editorCard" style="display:none;">
-    <div class="row" style="justify-content:space-between;">
-      <div>
-        <label style="margin-bottom:0;">Mode</label>
-        <select id="modeSelect">
-          <option value="node">Place Point</option>
-          <option value="edge">Draw Walkway (tap 2 points)</option>
-        </select>
-      </div>
-      <div id="nodeTypeWrap">
-        <label style="margin-bottom:0;">Point type</label>
-        <select id="nodeType">
-          <option value="gate">Gate</option>
-          <option value="entrance">Building Entrance</option>
-          <option value="destination">Destination / Ward</option>
-          <option value="junction">Walkway Junction (no label)</option>
-        </select>
-      </div>
+
+    <div class="stepBar">
+      <div class="stepDot" id="stepDot1">1. Gates &amp; Entrances</div>
+      <div class="stepDot" id="stepDot2">2. Road Junctions</div>
+      <div class="stepDot" id="stepDot3">3. Connect the Path</div>
     </div>
-    <div class="hint">Place mode: tap the image to add a point (junctions need no name). Walkway mode: tap one point then another to connect them.</div>
+
+    <div class="instruction" id="instructionBox"></div>
 
     <div id="canvasWrap">
       <svg id="mapSvg"></svg>
     </div>
 
     <div class="row">
+      <button class="secondary" id="backStepBtn" onclick="goStep(currentStep-1)">Back</button>
+      <button id="nextStepBtn" onclick="goStep(currentStep+1)">Next Step</button>
       <button class="danger secondary" onclick="undoLast()">Undo Last</button>
       <button class="secondary" onclick="loadProject()">Refresh</button>
     </div>
@@ -111,6 +116,15 @@
   </div>
 </div>
 
+<div id="typePopup">
+  <div class="box">
+    <label style="margin-bottom:10px;">What is this point?</label>
+    <button onclick="chooseType('gate')">Gate</button>
+    <button onclick="chooseType('entrance')">Building Entrance</button>
+    <button class="secondary" onclick="closeTypePopup()">Cancel</button>
+  </div>
+</div>
+
 <script>
 const SUPABASE_URL = 'https://jqqnnkzozjskziaizajg.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcW5ua3pvempza3ppYWl6YWpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5Mjk1ODAsImV4cCI6MjA4ODUwNTU4MH0.sEYeWnm0dvuw8bLSVnQhqmgV8LB-pELjpuVIa3Us1Gg';
@@ -119,9 +133,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const ADMIN_PASSWORD = 'rasta@admin2026';
 const VISITOR_BASE_URL = 'https://vkv-coder.github.io/rastadekho/visitor.html';
 
-function showForgotPassword(){
-  document.getElementById('forgotBox').style.display = 'block';
-}
+function showForgotPassword(){ document.getElementById('forgotBox').style.display = 'block'; }
 
 function tryLogin(){
   const v = document.getElementById('pwInput').value;
@@ -137,14 +149,22 @@ function tryLogin(){
 let currentProject = null;
 let nodes = [];
 let edges = [];
-let pendingEdgeNode = null;
+let currentStep = 1;
+let pendingTapCoords = null;
+let chainNode = null; // for step 3 chain-connect
+
+const STEP_INSTRUCTIONS = {
+  1: 'Tap each Gate and Building Entrance on the map, then choose its type and give it a name.',
+  2: 'Tap every point where the road turns or branches. These are placed automatically as Junctions (no name needed).',
+  3: 'Tap a starting point (it will glow), then tap the next nearest point along the road to connect them — that road segment turns green. Keep tapping onward, point by point, following the road. Tapping two already-connected points again removes that connection.'
+};
 
 function slugify(str){
   return str.toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
 }
 
 async function loadProjectList(){
-  const { data, error } = await sb.from('rd_projects').select('*').order('created_at',{ascending:true});
+  const { data } = await sb.from('rd_projects').select('*').order('created_at',{ascending:true});
   const sel = document.getElementById('projectSelect');
   sel.innerHTML = '<option value="">-- select --</option>';
   (data||[]).forEach(p=>{
@@ -154,9 +174,7 @@ async function loadProjectList(){
   });
 }
 
-function showNewProject(){
-  document.getElementById('newProjectForm').style.display='block';
-}
+function showNewProject(){ document.getElementById('newProjectForm').style.display='block'; }
 
 async function createProject(){
   const name = document.getElementById('newProjName').value.trim();
@@ -192,7 +210,8 @@ async function loadProject(){
   const { data: e } = await sb.from('rd_edges').select('*').eq('project_id',id);
   nodes = n || []; edges = e || [];
   document.getElementById('editorCard').style.display='block';
-  renderCanvas();
+  chainNode = null;
+  goStep(1);
   renderNodeList();
   renderQr();
 }
@@ -203,6 +222,23 @@ function renderQr(){
   document.getElementById('visitorLink').textContent = link;
   document.getElementById('qrcode').innerHTML = '';
   new QRCode(document.getElementById('qrcode'), { text: link, width:140, height:140 });
+}
+
+function goStep(step){
+  if(step<1) step=1;
+  if(step>3) step=3;
+  currentStep = step;
+  chainNode = null;
+  [1,2,3].forEach(s=>{
+    const dot = document.getElementById('stepDot'+s);
+    dot.classList.remove('active','done');
+    if(s<step) dot.classList.add('done');
+    if(s===step) dot.classList.add('active');
+  });
+  document.getElementById('instructionBox').textContent = STEP_INSTRUCTIONS[step];
+  document.getElementById('backStepBtn').disabled = step===1;
+  document.getElementById('nextStepBtn').textContent = step===3 ? 'Done' : 'Next Step';
+  renderCanvas();
 }
 
 function renderCanvas(){
@@ -227,15 +263,15 @@ function renderCanvas(){
     line.setAttribute('stroke-linecap','round');
     edgeLayer.appendChild(line);
   });
+
   const nodeLayer = svg.querySelector('#nodeLayer');
-  const colors = {gate:'var(--accent)', entrance:'var(--building-dark)', destination:'var(--path)', junction:'#a89a7c'};
+  const colors = {gate:'var(--accent)', entrance:'var(--building-dark)', junction:'var(--junction)'};
   nodes.forEach(n=>{
     const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
     c.setAttribute('cx',n.x); c.setAttribute('cy',n.y);
     c.setAttribute('r', n.type==='junction' ? 5 : 10);
     c.setAttribute('fill', colors[n.type] || '#999');
     c.setAttribute('stroke','#fff'); c.setAttribute('stroke-width','2');
-    c.setAttribute('data-node-id', n.id);
     nodeLayer.appendChild(c);
     if(n.name){
       const t = document.createElementNS('http://www.w3.org/2000/svg','text');
@@ -247,70 +283,82 @@ function renderCanvas(){
     }
   });
 
-  // highlight the currently selected point in Walkway mode with a glowing ring
-  if(pendingEdgeNode){
+  if(currentStep===3 && chainNode){
     const ring = document.createElementNS('http://www.w3.org/2000/svg','circle');
-    ring.setAttribute('cx', pendingEdgeNode.x); ring.setAttribute('cy', pendingEdgeNode.y);
+    ring.setAttribute('cx', chainNode.x); ring.setAttribute('cy', chainNode.y);
     ring.setAttribute('r', 16); ring.setAttribute('fill','none');
     ring.setAttribute('stroke', '#2f6fe8'); ring.setAttribute('stroke-width','3');
     ring.setAttribute('stroke-dasharray','4,3');
     nodeLayer.appendChild(ring);
   }
 
-  svg.onclick = async (evt)=>{
+  svg.onclick = (evt)=>{
     const rect = svg.getBoundingClientRect();
     const scaleX = w/rect.width, scaleY = h/rect.height;
     const x = (evt.clientX-rect.left)*scaleX, y=(evt.clientY-rect.top)*scaleY;
-    const mode = document.getElementById('modeSelect').value;
 
-    if(mode==='node'){
-      const type = document.getElementById('nodeType').value;
-      let name = '';
-      if(type!=='junction'){
-        name = prompt('Name for this point (e.g. Main Gate, X-Ray, Ward 3B):');
-        if(name===null) return;
-      }
-      const { data, error } = await sb.from('rd_nodes').insert({
-        project_id: currentProject.id, type, name, x: Math.round(x), y: Math.round(y)
-      }).select().single();
-      if(error){ alert(error.message); return; }
-      nodes.push(data);
-      renderCanvas(); renderNodeList();
-    } else {
-      // edge mode: find nearest existing node to the tap
-      let nearest=null, bestD=Infinity;
-      nodes.forEach(n=>{
-        const d = Math.hypot(n.x-x, n.y-y);
-        if(d<bestD){ bestD=d; nearest=n; }
-      });
-      if(!nearest || bestD>30){ alert('Tap closer to an existing point to connect it.'); return; }
-      if(!pendingEdgeNode){
-        pendingEdgeNode = nearest;
-        renderCanvas();
-      } else {
-        if(pendingEdgeNode.id === nearest.id){ pendingEdgeNode=null; renderCanvas(); return; }
-
-        // check if these two points are already connected
-        const existing = edges.find(e =>
-          (e.node_a===pendingEdgeNode.id && e.node_b===nearest.id) ||
-          (e.node_a===nearest.id && e.node_b===pendingEdgeNode.id)
-        );
-
-        if(existing){
-          // already connected -> tapping again removes this walkway
-          await sb.from('rd_edges').delete().eq('id', existing.id);
-          edges = edges.filter(e => e.id !== existing.id);
-        } else {
-          const { data, error } = await sb.from('rd_edges').insert({
-            project_id: currentProject.id, node_a: pendingEdgeNode.id, node_b: nearest.id
-          }).select().single();
-          if(!error){ edges.push(data); }
-        }
-        pendingEdgeNode = null;
-        renderCanvas();
-      }
+    if(currentStep===1){
+      pendingTapCoords = {x,y};
+      openTypePopup();
+    } else if(currentStep===2){
+      placeNode('junction', '', x, y);
+    } else if(currentStep===3){
+      handleChainTap(x,y);
     }
   };
+}
+
+function openTypePopup(){ document.getElementById('typePopup').style.display='flex'; }
+function closeTypePopup(){ document.getElementById('typePopup').style.display='none'; pendingTapCoords=null; }
+
+async function chooseType(type){
+  closeTypePopup();
+  const name = prompt('Name for this point (e.g. Main Gate, OPD Block Entrance):');
+  if(name===null || !pendingTapCoords) return;
+  await placeNode(type, name, pendingTapCoords.x, pendingTapCoords.y);
+  pendingTapCoords = null;
+}
+
+async function placeNode(type, name, x, y){
+  const { data, error } = await sb.from('rd_nodes').insert({
+    project_id: currentProject.id, type, name, x: Math.round(x), y: Math.round(y)
+  }).select().single();
+  if(error){ alert(error.message); return; }
+  nodes.push(data);
+  renderCanvas(); renderNodeList();
+}
+
+async function handleChainTap(x,y){
+  let nearest=null, bestD=Infinity;
+  nodes.forEach(n=>{
+    const d = Math.hypot(n.x-x, n.y-y);
+    if(d<bestD){ bestD=d; nearest=n; }
+  });
+  if(!nearest || bestD>30){ alert('Tap closer to an existing point.'); return; }
+
+  if(!chainNode){
+    chainNode = nearest;
+    renderCanvas();
+    return;
+  }
+  if(chainNode.id === nearest.id){ return; }
+
+  const existing = edges.find(e =>
+    (e.node_a===chainNode.id && e.node_b===nearest.id) ||
+    (e.node_a===nearest.id && e.node_b===chainNode.id)
+  );
+
+  if(existing){
+    await sb.from('rd_edges').delete().eq('id', existing.id);
+    edges = edges.filter(e => e.id !== existing.id);
+  } else {
+    const { data, error } = await sb.from('rd_edges').insert({
+      project_id: currentProject.id, node_a: chainNode.id, node_b: nearest.id
+    }).select().single();
+    if(!error){ edges.push(data); }
+  }
+  chainNode = nearest; // continue the chain forward
+  renderCanvas();
 }
 
 function renderNodeList(){
@@ -333,15 +381,16 @@ async function deleteNode(id){
 }
 
 async function undoLast(){
-  if(edges.length && document.getElementById('modeSelect').value==='edge'){
+  if(currentStep===3 && edges.length){
     const last = edges[edges.length-1];
     await sb.from('rd_edges').delete().eq('id', last.id);
-  } else if(nodes.length){
-    const last = nodes[nodes.length-1];
-    await deleteNode(last.id);
+    loadProject();
     return;
   }
-  loadProject();
+  if(nodes.length){
+    const last = nodes[nodes.length-1];
+    await deleteNode(last.id);
+  }
 }
 </script>
 
