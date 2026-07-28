@@ -118,6 +118,10 @@
 
     <div class="card" style="margin-top:14px;">
       <label>Bilingual Names</label>
+      <div class="hint">If you have older points added before Serial Numbers existed, first click below to number them automatically.</div>
+      <button class="secondary" onclick="assignMissingSerials()">Assign Serial Numbers to Older Points</button>
+      <div class="hint" id="assignSerialStatus"></div>
+      <hr style="border:none;border-top:1px solid var(--line);margin:10px 0;">
       <div class="hint">Step 1: Download the names sheet (Sr. No + English Name are already filled in from what you entered on the map). Step 2: Open it, type in the Gujarati Name column, save. Step 3: Upload it back here.</div>
       <button class="secondary" onclick="downloadNamesExcel()">1. Download Names Sheet</button>
       <input type="file" id="namesExcelFile" accept=".xlsx,.xls" style="margin-top:10px;">
@@ -369,6 +373,31 @@ function findNearbyNode(x,y,threshold){
 function openTypePopup(){ document.getElementById('typePopup').style.display='flex'; }
 function closeTypePopup(){ document.getElementById('typePopup').style.display='none'; }
 function cancelTypePopup(){ closeTypePopup(); pendingTapCoords=null; }
+
+async function assignMissingSerials(){
+  const statusBox = document.getElementById('assignSerialStatus');
+  const withoutSerial = nodes.filter(n => n.type!=='junction' && (n.serial_no===null || n.serial_no===undefined));
+  if(!withoutSerial.length){ statusBox.textContent = 'All points already have a Serial No.'; return; }
+
+  let nextSerial = 1;
+  nodes.forEach(n=>{ if(n.serial_no && n.serial_no >= nextSerial) nextSerial = n.serial_no + 1; });
+
+  let assigned = 0;
+  for(const n of withoutSerial){
+    const nameEnFallback = n.name_en || n.name || '';
+    const { error } = await sb.from('rd_nodes').update({
+      serial_no: nextSerial, name_en: nameEnFallback
+    }).eq('id', n.id);
+    if(!error){
+      n.serial_no = nextSerial;
+      n.name_en = nameEnFallback;
+      nextSerial++;
+      assigned++;
+    }
+  }
+  statusBox.textContent = `Assigned Serial No. to ${assigned} older point(s).`;
+  renderCanvas(); renderNodeList();
+}
 
 function downloadNamesExcel(){
   const rows = nodes
