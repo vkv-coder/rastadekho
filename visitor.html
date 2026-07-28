@@ -32,6 +32,8 @@
   #mapWrap{max-width:100%;overflow:auto;border:1px solid var(--line);border-radius:10px;background:#fbf9f2;}
   svg{display:block;touch-action:manipulation;cursor:crosshair;}
   .btnbar{display:flex;gap:8px;width:100%;max-width:520px;margin-top:10px;}
+  button{padding:9px 14px;border:none;border-radius:8px;background:var(--building);color:#fff;font-weight:600;cursor:pointer;font-size:0.85rem;margin-right:6px;}
+  button.secondary{background:#fff;color:var(--ink);border:1px solid var(--line);}
   button.resetBtn{flex:1;padding:10px;border-radius:8px;background:#fff;color:var(--ink);border:1px solid var(--line);font-size:0.9rem;font-weight:600;cursor:pointer;}
   .loading{padding:40px;text-align:center;color:#6b675a;}
 </style>
@@ -49,6 +51,30 @@
 <div id="loadingMsg" class="loading">Loading map...</div>
 
 <div id="appBody" style="display:none;width:100%;display:flex;flex-direction:column;align-items:center;">
+  <div class="panel" id="meetPanel">
+    <div class="row" style="justify-content:space-between;">
+      <button class="secondary" id="meetToggleBtn" onclick="toggleMeetBox()" style="flex:none;">🤝 Meet a Friend</button>
+      <span id="meetActiveLabel" style="font-size:0.8rem;color:#1f6b3a;font-weight:600;display:none;"></span>
+    </div>
+    <div id="meetBox" style="display:none;margin-top:10px;">
+      <div id="meetStartJoin">
+        <div class="row">
+          <button onclick="startMeet()">Start New Meet</button>
+          <button class="secondary" onclick="showJoinMeet()">Join with Code</button>
+        </div>
+        <div id="joinMeetRow" style="display:none;margin-top:8px;">
+          <input type="text" id="joinCodeInput" placeholder="Enter 5-digit code" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--line);font-size:1rem;">
+          <button onclick="joinMeet()" style="margin-top:6px;">Join</button>
+        </div>
+      </div>
+      <div id="meetCodeDisplay" style="display:none;text-align:center;">
+        <div style="font-size:0.8rem;color:#6b675a;">Share this code with the other person:</div>
+        <div style="font-size:1.8rem;font-weight:800;letter-spacing:3px;color:var(--path);">--</div>
+        <button class="secondary" onclick="endMeet()" style="margin-top:8px;">Leave Meet</button>
+      </div>
+    </div>
+  </div>
+
   <div class="panel">
     <div class="row">
       <label id="goingLabel">Going to:</label>
@@ -90,7 +116,9 @@ const T = {
     updated: 'Route updated to new destination.',
     noRoute: 'No route found to this destination yet.',
     dist: 'Distance:', ft: 'ft', approx: 'Approx:', steps: 'steps',
-    reset: 'Reset'
+    reset: 'Reset',
+    meetWaiting: 'Waiting for the other person to tap their position...',
+    meetActive: '🤝 Showing route to the other person. Purple dot is their last tapped spot.'
   },
   gu: {
     sub: 'તમારું સાચું સ્થાન બતાવવા નકશા પર ટચ કરો, ક્યાં જવું છે તે પસંદ કરો.',
@@ -102,7 +130,9 @@ const T = {
     updated: 'નવું સ્થળ પસંદ થયું, રસ્તો બદલાયો.',
     noRoute: 'આ સ્થળ માટે હજુ કોઈ રસ્તો મળ્યો નથી.',
     dist: 'અંતર:', ft: 'ફૂટ', approx: 'અંદાજિત:', steps: 'પગલાં',
-    reset: 'રીસેટ કરો'
+    reset: 'રીસેટ કરો',
+    meetWaiting: 'બીજી વ્યક્તિ પોતાનું સ્થાન બતાવે તેની રાહ જોવાઈ રહી છે...',
+    meetActive: '🤝 બીજી વ્યક્તિ તરફનો રસ્તો બતાવાઈ રહ્યો છે. જાંબલી ટપકું તેમનું છેલ્લું સ્થાન છે.'
   }
 };
 let currentLang = 'en';
@@ -241,6 +271,145 @@ let currentRoutePts = null;
 let startTapped = false;
 let lastActualPoint = null;
 
+// ---- Meet a Friend state ----
+let meetCode = null;
+let meetPollTimer = null;
+let otherPersonMarker = null;
+const MEET_LABELS = {
+  meetBtn: 'Meet a Friend', start: 'Start New Meet', join: 'Join with Code',
+  codeShare: 'Share this code with the other person:', leave: 'Leave Meet',
+  waiting: 'Waiting for the other person to tap their position...',
+  active: 'Meet active - showing route to the other person'
+};
+
+function getParticipantId(){
+  let id = localStorage.getItem('rd_participant_id');
+  if(!id){ id = 'p_' + Math.random().toString(36).slice(2,10); localStorage.setItem('rd_participant_id', id); }
+  return id;
+}
+
+function toggleMeetBox(){
+  const box = document.getElementById('meetBox');
+  box.style.display = box.style.display==='none' ? 'block' : 'none';
+}
+
+function showJoinMeet(){ document.getElementById('joinMeetRow').style.display = 'block'; }
+
+async function startMeet(){
+  const code = Math.floor(10000 + Math.random()*90000).toString(); // 5-digit code
+  const { error } = await sb.from('rd_meets').insert({ project_id: project.id, meet_code: code });
+  if(error){ alert('Could not start meet: ' + error.message); return; }
+  activateMeet(code);
+}
+
+async function joinMeet(){
+  const code = document.getElementById('joinCodeInput').value.trim();
+  if(!code){ return; }
+  const { data, error } = await sb.from('rd_meets').select('*').eq('meet_code', code).eq('project_id', project.id).single();
+  if(error || !data){ alert('Code not found for this location. Check the code and try again.'); return; }
+  activateMeet(code);
+}
+
+function activateMeet(code){
+  meetCode = code;
+  document.getElementById('meetStartJoin').style.display = 'none';
+  document.getElementById('meetCodeDisplay').style.display = 'block';
+  document.getElementById('meetCodeDisplay').querySelector('div[style*="1.8rem"]').textContent = code;
+  document.getElementById('meetActiveLabel').style.display = 'inline';
+  document.getElementById('meetActiveLabel').textContent = 'Meet ' + code + ' active';
+  document.getElementById('meetToggleBtn').textContent = '🤝 Meet: ' + code;
+
+  if(lastActualPoint){ pushMyMeetPosition(lastActualPoint); }
+  if(meetPollTimer) clearInterval(meetPollTimer);
+  meetPollTimer = setInterval(pollOtherPosition, 6000);
+  pollOtherPosition();
+}
+
+function endMeet(){
+  meetCode = null;
+  if(meetPollTimer){ clearInterval(meetPollTimer); meetPollTimer = null; }
+  document.getElementById('meetStartJoin').style.display = 'block';
+  document.getElementById('joinMeetRow').style.display = 'none';
+  document.getElementById('meetCodeDisplay').style.display = 'none';
+  document.getElementById('meetActiveLabel').style.display = 'none';
+  document.getElementById('meetToggleBtn').textContent = '🤝 Meet a Friend';
+  if(otherPersonMarker) otherPersonMarker.setAttribute('opacity','0');
+  // redraw normal destination-based route if one is selected
+  if(startTapped && lastActualPoint){
+    const snap = snapToWalkway(lastActualPoint);
+    drawRoute(lastActualPoint, snap);
+  }
+}
+
+async function pushMyMeetPosition(actual){
+  if(!meetCode) return;
+  await sb.from('rd_meet_positions').upsert({
+    meet_code: meetCode, participant_id: getParticipantId(), x: actual.x, y: actual.y, updated_at: new Date().toISOString()
+  }, { onConflict: 'meet_code,participant_id' });
+}
+
+async function pollOtherPosition(){
+  if(!meetCode) return;
+  const { data } = await sb.from('rd_meet_positions').select('*').eq('meet_code', meetCode);
+  const mine = getParticipantId();
+  const other = (data||[]).find(p => p.participant_id !== mine);
+  if(!other){
+    setStatus('meetWaiting');
+    return;
+  }
+  if(lastActualPoint){
+    drawRouteToOther(lastActualPoint, {x: other.x, y: other.y});
+  }
+}
+
+function bestPathBetweenPoints(aActual, aSnap, bActual, bSnap){
+  const endsA = [aSnap.edgeA, aSnap.edgeB];
+  const endsB = [bSnap.edgeA, bSnap.edgeB];
+  let best = null;
+  endsA.forEach(nodeA=>{
+    endsB.forEach(nodeB=>{
+      const r = dijkstra(nodeA, nodeB);
+      if(!r) return;
+      const total = dist(aActual, nodes[nodeA]) + r.length + dist(nodes[nodeB], bActual);
+      if(!best || total < best.total){ best = { total, nodeA, nodeB, path:r.path }; }
+    });
+  });
+  return best;
+}
+
+function drawRouteToOther(myActual, otherActual){
+  const mySnap = snapToWalkway(myActual);
+  const otherSnap = snapToWalkway(otherActual);
+  if(!mySnap || !otherSnap) return;
+
+  const best = bestPathBetweenPoints(myActual, mySnap, otherActual, otherSnap);
+  if(!best){ setStatus('noRoute','offtrack'); routeLine.setAttribute('opacity','0'); altLine.setAttribute('opacity','0'); return; }
+
+  const pts = [myActual, nodes[best.nodeA], ...best.path.slice(1).map(k=>nodes[k]), otherActual];
+  currentRoutePts = pts;
+  routeLine.setAttribute('d', 'M ' + pts.map(p=>`${p.x},${p.y}`).join(' L '));
+  routeLine.setAttribute('opacity','1');
+  altLine.setAttribute('opacity','0');
+  drawArrowsAlongPath(pts, 55);
+
+  if(!otherPersonMarker){
+    otherPersonMarker = document.createElementNS('http://www.w3.org/2000/svg','g');
+    otherPersonMarker.innerHTML = `
+      <circle cx="0" cy="0" r="12" fill="#8a5cf6" opacity="0.25"/>
+      <circle cx="0" cy="0" r="7" fill="#8a5cf6" stroke="#fff" stroke-width="2"/>`;
+    svg.appendChild(otherPersonMarker);
+  }
+  otherPersonMarker.setAttribute('transform', `translate(${otherActual.x},${otherActual.y})`);
+  otherPersonMarker.setAttribute('opacity','1');
+
+  const feet = Math.round(best.total * SCALE_FT_PER_PX);
+  const steps = Math.round(feet / STEP_LENGTH_FT);
+  document.getElementById('distFt').textContent = feet;
+  document.getElementById('distSteps').textContent = steps;
+  document.getElementById('distBar').style.display = 'flex';
+  setStatus('meetActive');
+}
+
 function destNodeKey(){ return document.getElementById('destSelect').value; }
 
 function showOffRouteLine(actual, snap){
@@ -347,15 +516,21 @@ function attachMapEvents(){
     const actual = svgPoint(evt);
     lastActualPoint = actual;
     placeUserMarker(actual.x, actual.y);
-    if(!startTapped){
+    startTapped = true;
+
+    if(meetCode){
+      pushMyMeetPosition(actual);
+      pollOtherPosition();
+      return;
+    }
+
+    if(!currentRoutePts){
       const snap = snapToWalkway(actual);
       if(!snap){ return; }
       showOffRouteLine(actual, snap);
       const ok = drawRoute(actual, snap);
-      startTapped = true;
       if(ok) setStatus('drawn');
     } else {
-      if(!currentRoutePts){ return; }
       const onRoute = closestPointOnPolyline(currentRoutePts, actual);
       if(onRoute.d < ON_ROUTE_THRESHOLD_PX){
         offRouteLine.setAttribute('opacity','0'); snapMarker.setAttribute('opacity','0');
@@ -368,6 +543,7 @@ function attachMapEvents(){
   });
 
   document.getElementById('destSelect').addEventListener('change', ()=>{
+    if(meetCode) return; // destination dropdown is ignored while a Meet is active
     if(startTapped && lastActualPoint){
       const snap = snapToWalkway(lastActualPoint);
       showOffRouteLine(lastActualPoint, snap);
