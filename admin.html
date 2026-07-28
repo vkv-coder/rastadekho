@@ -45,6 +45,12 @@
   <input type="password" id="pwInput" placeholder="Enter password">
   <button onclick="tryLogin()">Login</button>
   <div class="hint" id="loginError" style="color:#a3341a;"></div>
+  <div class="hint" style="margin-top:10px;">
+    <a href="#" onclick="showForgotPassword(); return false;" style="color:#2f6f5e;">Forgot password?</a>
+  </div>
+  <div class="hint" id="forgotBox" style="display:none;margin-top:6px;">
+    Contact support to recover access: <a href="mailto:vkvcoder.support@gmail.com">vkvcoder.support@gmail.com</a>
+  </div>
 </div>
 
 <div id="mainApp" style="display:none;">
@@ -112,6 +118,10 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const ADMIN_PASSWORD = 'rasta@admin2026';
 const VISITOR_BASE_URL = 'https://vkv-coder.github.io/rastadekho/visitor.html';
+
+function showForgotPassword(){
+  document.getElementById('forgotBox').style.display = 'block';
+}
 
 function tryLogin(){
   const v = document.getElementById('pwInput').value;
@@ -218,13 +228,14 @@ function renderCanvas(){
     edgeLayer.appendChild(line);
   });
   const nodeLayer = svg.querySelector('#nodeLayer');
-  const colors = {gate:'var(--accent)', entrance:'var(--building-dark)', destination:'var(--path)', junction:'var(--junction)'};
+  const colors = {gate:'var(--accent)', entrance:'var(--building-dark)', destination:'var(--path)', junction:'#a89a7c'};
   nodes.forEach(n=>{
     const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
     c.setAttribute('cx',n.x); c.setAttribute('cy',n.y);
-    c.setAttribute('r', n.type==='junction' ? 6 : 10);
+    c.setAttribute('r', n.type==='junction' ? 5 : 10);
     c.setAttribute('fill', colors[n.type] || '#999');
     c.setAttribute('stroke','#fff'); c.setAttribute('stroke-width','2');
+    c.setAttribute('data-node-id', n.id);
     nodeLayer.appendChild(c);
     if(n.name){
       const t = document.createElementNS('http://www.w3.org/2000/svg','text');
@@ -235,6 +246,16 @@ function renderCanvas(){
       nodeLayer.appendChild(t);
     }
   });
+
+  // highlight the currently selected point in Walkway mode with a glowing ring
+  if(pendingEdgeNode){
+    const ring = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    ring.setAttribute('cx', pendingEdgeNode.x); ring.setAttribute('cy', pendingEdgeNode.y);
+    ring.setAttribute('r', 16); ring.setAttribute('fill','none');
+    ring.setAttribute('stroke', '#2f6fe8'); ring.setAttribute('stroke-width','3');
+    ring.setAttribute('stroke-dasharray','4,3');
+    nodeLayer.appendChild(ring);
+  }
 
   svg.onclick = async (evt)=>{
     const rect = svg.getBoundingClientRect();
@@ -265,12 +286,26 @@ function renderCanvas(){
       if(!nearest || bestD>30){ alert('Tap closer to an existing point to connect it.'); return; }
       if(!pendingEdgeNode){
         pendingEdgeNode = nearest;
+        renderCanvas();
       } else {
-        if(pendingEdgeNode.id === nearest.id){ pendingEdgeNode=null; return; }
-        const { data, error } = await sb.from('rd_edges').insert({
-          project_id: currentProject.id, node_a: pendingEdgeNode.id, node_b: nearest.id
-        }).select().single();
-        if(!error){ edges.push(data); }
+        if(pendingEdgeNode.id === nearest.id){ pendingEdgeNode=null; renderCanvas(); return; }
+
+        // check if these two points are already connected
+        const existing = edges.find(e =>
+          (e.node_a===pendingEdgeNode.id && e.node_b===nearest.id) ||
+          (e.node_a===nearest.id && e.node_b===pendingEdgeNode.id)
+        );
+
+        if(existing){
+          // already connected -> tapping again removes this walkway
+          await sb.from('rd_edges').delete().eq('id', existing.id);
+          edges = edges.filter(e => e.id !== existing.id);
+        } else {
+          const { data, error } = await sb.from('rd_edges').insert({
+            project_id: currentProject.id, node_a: pendingEdgeNode.id, node_b: nearest.id
+          }).select().single();
+          if(!error){ edges.push(data); }
+        }
         pendingEdgeNode = null;
         renderCanvas();
       }
