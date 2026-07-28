@@ -98,6 +98,12 @@
 
     <div class="instruction" id="instructionBox"></div>
 
+    <div class="row" style="margin-bottom:8px;">
+      <button class="secondary" onclick="zoomBy(1.4)">Zoom In (+)</button>
+      <button class="secondary" onclick="zoomBy(0.7)">Zoom Out (-)</button>
+      <button class="secondary" onclick="resetZoom()">Reset Zoom</button>
+      <span class="hint" style="margin:0;">Zoom in to tap close-together points precisely.</span>
+    </div>
     <div id="canvasWrap">
       <svg id="mapSvg"></svg>
     </div>
@@ -240,12 +246,24 @@ function goStep(step){
   renderCanvas();
 }
 
+let zoomLevel = 1;
+
+function zoomBy(factor){
+  zoomLevel = Math.max(0.5, Math.min(zoomLevel * factor, 6));
+  renderCanvas();
+}
+function resetZoom(){
+  zoomLevel = 1;
+  renderCanvas();
+}
+
 function renderCanvas(){
   const svg = document.getElementById('mapSvg');
   const w = currentProject.image_width, h = currentProject.image_height;
+  const baseW = Math.min(w,760);
   svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
-  svg.setAttribute('width', Math.min(w,760));
-  svg.setAttribute('height', Math.min(w,760) * (h/w));
+  svg.setAttribute('width', baseW * zoomLevel);
+  svg.setAttribute('height', baseW * (h/w) * zoomLevel);
   svg.innerHTML = `
     <image href="${currentProject.image_url}" x="0" y="0" width="${w}" height="${h}"/>
     <g id="edgeLayer"></g>
