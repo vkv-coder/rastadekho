@@ -274,7 +274,14 @@ function drawRoute(actual, snap){
     return {pts, length: dist(snap,nodes[nearerNode]) + r.length};
   });
 
-  if(candidates.length===0){ setStatus('noRoute','offtrack'); routeLine.setAttribute('opacity','0'); altLine.setAttribute('opacity','0'); return; }
+  if(candidates.length===0){
+    setStatus('noRoute','offtrack');
+    routeLine.setAttribute('opacity','0'); altLine.setAttribute('opacity','0');
+    routeArrows.innerHTML = '';
+    document.getElementById('distBar').style.display = 'none';
+    currentRoutePts = null;
+    return false;
+  }
   candidates.sort((a,b)=>a.length-b.length);
   const shortest = candidates[0];
   const alt = candidates[1];
@@ -296,6 +303,7 @@ function drawRoute(actual, snap){
   document.getElementById('distFt').textContent = feet;
   document.getElementById('distSteps').textContent = steps;
   document.getElementById('distBar').style.display = 'flex';
+  return true;
 }
 
 function svgPoint(evt){
@@ -320,9 +328,9 @@ function attachMapEvents(){
       const snap = snapToWalkway(actual);
       if(!snap){ return; }
       showOffRouteLine(actual, snap);
-      drawRoute(actual, snap);
+      const ok = drawRoute(actual, snap);
       startTapped = true;
-      setStatus('drawn');
+      if(ok) setStatus('drawn');
     } else {
       if(!currentRoutePts){ return; }
       const onRoute = closestPointOnPolyline(currentRoutePts, actual);
@@ -340,8 +348,8 @@ function attachMapEvents(){
     if(startTapped && lastActualPoint){
       const snap = snapToWalkway(lastActualPoint);
       showOffRouteLine(lastActualPoint, snap);
-      drawRoute(lastActualPoint, snap);
-      setStatus('updated');
+      const ok = drawRoute(lastActualPoint, snap);
+      if(ok) setStatus('updated');
     }
   });
 
