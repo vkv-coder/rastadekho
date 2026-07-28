@@ -128,7 +128,7 @@
     <label style="margin-bottom:10px;">What is this point?</label>
     <button onclick="chooseType('gate')">Gate</button>
     <button onclick="chooseType('entrance')">Building Entrance</button>
-    <button class="secondary" onclick="closeTypePopup()">Cancel</button>
+    <button class="secondary" onclick="cancelTypePopup()">Cancel</button>
   </div>
 </div>
 
@@ -337,13 +337,15 @@ function renderCanvas(){
 }
 
 function openTypePopup(){ document.getElementById('typePopup').style.display='flex'; }
-function closeTypePopup(){ document.getElementById('typePopup').style.display='none'; pendingTapCoords=null; }
+function closeTypePopup(){ document.getElementById('typePopup').style.display='none'; }
+function cancelTypePopup(){ closeTypePopup(); pendingTapCoords=null; }
 
 async function chooseType(type){
+  const coords = pendingTapCoords;
   closeTypePopup();
   const name = prompt('Name for this point (e.g. Main Gate, OPD Block Entrance):');
-  if(name===null || !pendingTapCoords) return;
-  await placeNode(type, name, pendingTapCoords.x, pendingTapCoords.y);
+  if(name===null || !coords) return;
+  await placeNode(type, name, coords.x, coords.y);
   pendingTapCoords = null;
 }
 
