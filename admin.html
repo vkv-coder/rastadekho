@@ -163,7 +163,7 @@ let chainNode = null; // for step 3 chain-connect
 const STEP_INSTRUCTIONS = {
   1: 'Tap each Gate and Building Entrance on the map, then choose its type and give it a name.',
   2: 'Tap every point where the road turns or branches. These are placed automatically as Junctions (no name needed).',
-  3: 'Tap a starting point (it will glow), then tap the next nearest point along the road to connect them — that road segment turns green. Keep tapping onward, point by point, following the road. Tapping two already-connected points again removes that connection.'
+  3: 'Tap a starting point (it will glow), then tap the next nearest point along the road to connect them — that road segment turns green. Keep tapping onward, point by point, following the road. If a segment is already connected, tapping through it does nothing harmful — it just continues the chain. To remove a wrong connection, use "Undo Last" right after making it.'
 };
 
 function slugify(str){
@@ -378,15 +378,13 @@ async function handleChainTap(x,y){
     (e.node_a===nearest.id && e.node_b===chainNode.id)
   );
 
-  if(existing){
-    await sb.from('rd_edges').delete().eq('id', existing.id);
-    edges = edges.filter(e => e.id !== existing.id);
-  } else {
+  if(!existing){
     const { data, error } = await sb.from('rd_edges').insert({
       project_id: currentProject.id, node_a: chainNode.id, node_b: nearest.id
     }).select().single();
     if(!error){ edges.push(data); }
   }
+  // if already connected, do nothing to the connection itself - just pass through and continue the chain
   chainNode = nearest; // continue the chain forward
   renderCanvas();
 }
@@ -394,10 +392,10 @@ async function handleChainTap(x,y){
 function renderNodeList(){
   const box = document.getElementById('nodeList');
   box.innerHTML = '';
-  nodes.forEach(n=>{
+  nodes.forEach((n,i)=>{
     const div = document.createElement('div');
     div.className='nodeItem';
-    div.innerHTML = `<span style="cursor:pointer;" onclick="highlightNode('${n.id}')"><span class="tag ${n.type}">${n.type}</span> ${n.name||'(junction)'} <span style="color:#8a8672;font-size:0.7rem;">(tap to highlight)</span></span>
+    div.innerHTML = `<span style="cursor:pointer;" onclick="highlightNode('${n.id}')"><b>#${i+1}</b> <span class="tag ${n.type}">${n.type}</span> ${n.name||'(junction)'} <span style="color:#8a8672;font-size:0.7rem;">(tap to highlight)</span></span>
       <button class="secondary danger" style="padding:3px 8px;font-size:0.7rem;" onclick="deleteNode('${n.id}')">Delete</button>`;
     box.appendChild(div);
   });
@@ -407,7 +405,7 @@ let highlightedNodeId = null;
 function highlightNode(id){
   highlightedNodeId = id;
   renderCanvas();
-  setTimeout(()=>{ highlightedNodeId = null; renderCanvas(); }, 2500);
+  setTimeout(()=>{ highlightedNodeId = null; renderCanvas(); }, 8000);
 }
 
 async function deleteNode(id){
