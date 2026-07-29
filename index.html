@@ -12,6 +12,9 @@
     margin:0;font-family:'Segoe UI',Arial,sans-serif;background:var(--paper);color:var(--ink);
     display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;text-align:center;padding:16px;
   }
+  .topbar{width:100%;max-width:340px;display:flex;justify-content:flex-end;gap:6px;margin-bottom:10px;}
+  .langBtn{padding:5px 12px;font-size:0.78rem;border-radius:6px;border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer;font-weight:600;}
+  .langBtn.active{background:var(--building);color:#fff;border-color:var(--building);}
   h1{font-size:1.6rem;margin-bottom:2px;}
   h1 span{color:var(--path);}
   p.sub{color:#6b675a;font-size:0.9rem;margin-top:0;margin-bottom:20px;}
@@ -24,12 +27,17 @@
 </style>
 </head>
 <body>
+  <div class="topbar">
+    <button class="langBtn active" id="langEN">EN</button>
+    <button class="langBtn" id="langGU">ગુજરાતી</button>
+  </div>
+
   <h1>Rasta<span>Dekho</span></h1>
-  <p class="sub">Select a venue to open its location guide</p>
+  <p class="sub" id="subText">Select a venue to open its location guide</p>
 
   <div class="panel">
-    <label for="venueSelect">Select Venue</label>
-    <select id="venueSelect"><option>Loading venues...</option></select>
+    <label for="venueSelect" id="selectLabel">Select Venue</label>
+    <select id="venueSelect"><option id="loadingOpt">Loading venues...</option></select>
     <button id="goBtn" onclick="goToVenue()" disabled>View Map</button>
   </div>
   <div class="msg" id="msg"></div>
@@ -39,7 +47,47 @@ const SUPABASE_URL = 'https://jqqnnkzozjskziaizajg.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcW5ua3pvempza3ppYWl6YWpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5Mjk1ODAsImV4cCI6MjA4ODUwNTU4MH0.sEYeWnm0dvuw8bLSVnQhqmgV8LB-pELjpuVIa3Us1Gg';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+const T = {
+  en: {
+    sub: 'Select a venue to open its location guide',
+    selectLabel: 'Select Venue',
+    goBtn: 'View Map',
+    loading: 'Loading venues...',
+    noVenues: 'No venues available',
+    noVenuesMsg: 'No venues have been uploaded yet. Please check with the site admin.'
+  },
+  gu: {
+    sub: 'સ્થળ માર્ગદર્શિકા ખોલવા માટે સ્થળ પસંદ કરો',
+    selectLabel: 'સ્થળ પસંદ કરો',
+    goBtn: 'નકશો જુઓ',
+    loading: 'સ્થળો લોડ થઈ રહ્યા છે...',
+    noVenues: 'કોઈ સ્થળ ઉપલબ્ધ નથી',
+    noVenuesMsg: 'હજુ સુધી કોઈ સ્થળ અપલોડ કરવામાં આવ્યું નથી. કૃપા કરી સાઇટ એડમિનનો સંપર્ક કરો.'
+  }
+};
+let currentLang = 'en';
 let venues = [];
+let loadFailed = false;
+
+function applyLanguage(lang){
+  currentLang = lang;
+  const t = T[lang];
+  document.getElementById('subText').textContent = t.sub;
+  document.getElementById('selectLabel').textContent = t.selectLabel;
+  document.getElementById('goBtn').textContent = t.goBtn;
+  document.getElementById('langEN').classList.toggle('active', lang==='en');
+  document.getElementById('langGU').classList.toggle('active', lang==='gu');
+
+  const select = document.getElementById('venueSelect');
+  if(loadFailed){
+    select.innerHTML = `<option>${t.noVenues}</option>`;
+    document.getElementById('msg').textContent = t.noVenuesMsg;
+  } else if(!venues.length){
+    select.innerHTML = `<option>${t.loading}</option>`;
+  }
+}
+document.getElementById('langEN').addEventListener('click', ()=>applyLanguage('en'));
+document.getElementById('langGU').addEventListener('click', ()=>applyLanguage('gu'));
 
 function goToVenue(){
   const slug = document.getElementById('venueSelect').value;
@@ -50,11 +98,10 @@ function goToVenue(){
 (async ()=>{
   const select = document.getElementById('venueSelect');
   const goBtn = document.getElementById('goBtn');
-  const msg = document.getElementById('msg');
   const { data, error } = await sb.from('rd_projects').select('name,slug').order('created_at',{ascending:true});
   if(error || !data || data.length === 0){
-    select.innerHTML = '<option>No venues available</option>';
-    msg.textContent = 'No venues have been uploaded yet. Please check with the site admin.';
+    loadFailed = true;
+    applyLanguage(currentLang);
     return;
   }
   venues = data;
