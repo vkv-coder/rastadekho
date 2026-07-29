@@ -6,37 +6,60 @@
 <title>RastaDekho</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
+  :root{ --ink:#1c2b2d; --paper:#f2efe6; --path:#c85a3c; --building:#2f6f5e; --line:#cfc8b4; }
+  *{box-sizing:border-box;}
   body{
-    margin:0;font-family:'Segoe UI',Arial,sans-serif;background:#f2efe6;color:#1c2b2d;
-    display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;text-align:center;
+    margin:0;font-family:'Segoe UI',Arial,sans-serif;background:var(--paper);color:var(--ink);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;text-align:center;padding:16px;
   }
-  h1{font-size:1.6rem;}
-  h1 span{color:#c85a3c;}
-  p{color:#6b675a;font-size:0.9rem;}
+  h1{font-size:1.6rem;margin-bottom:2px;}
+  h1 span{color:var(--path);}
+  p.sub{color:#6b675a;font-size:0.9rem;margin-top:0;margin-bottom:20px;}
+  .panel{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;width:100%;max-width:340px;}
+  label{display:block;font-size:0.85rem;font-weight:600;margin-bottom:6px;text-align:left;}
+  select{width:100%;padding:9px;border-radius:6px;border:1px solid var(--line);font-size:0.95rem;margin-bottom:12px;}
+  button{width:100%;padding:10px;border:none;border-radius:8px;background:var(--building);color:#fff;font-weight:600;cursor:pointer;font-size:0.9rem;}
+  button:disabled{opacity:0.5;cursor:default;}
+  .msg{font-size:0.85rem;color:#6b675a;margin-top:12px;}
 </style>
 </head>
 <body>
   <h1>Rasta<span>Dekho</span></h1>
-  <p id="msg">Loading your location guide...</p>
+  <p class="sub">Select a venue to open its location guide</p>
+
+  <div class="panel">
+    <label for="venueSelect">Select Venue</label>
+    <select id="venueSelect"><option>Loading venues...</option></select>
+    <button id="goBtn" onclick="goToVenue()" disabled>View Map</button>
+  </div>
+  <div class="msg" id="msg"></div>
 
 <script>
-// ---- Which project should the bare domain redirect to? ----
-// To change this later (e.g. once the real hospital project replaces the test one),
-// just update DEFAULT_PROJECT_NAME below to match the exact project name shown
-// in the admin panel's "Select project" dropdown, then re-push this file.
-const DEFAULT_PROJECT_NAME = 'test 3';
-
 const SUPABASE_URL = 'https://jqqnnkzozjskziaizajg.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcW5ua3pvempza3ppYWl6YWpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5Mjk1ODAsImV4cCI6MjA4ODUwNTU4MH0.sEYeWnm0dvuw8bLSVnQhqmgV8LB-pELjpuVIa3Us1Gg';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+let venues = [];
+
+function goToVenue(){
+  const slug = document.getElementById('venueSelect').value;
+  if(!slug) return;
+  window.location.href = `visitor.html?p=${slug}`;
+}
+
 (async ()=>{
-  const { data, error } = await sb.from('rd_projects').select('slug').eq('name', DEFAULT_PROJECT_NAME).single();
-  if(error || !data){
-    document.getElementById('msg').textContent = 'Could not find the default location guide. Please check with the site admin.';
+  const select = document.getElementById('venueSelect');
+  const goBtn = document.getElementById('goBtn');
+  const msg = document.getElementById('msg');
+  const { data, error } = await sb.from('rd_projects').select('name,slug').order('created_at',{ascending:true});
+  if(error || !data || data.length === 0){
+    select.innerHTML = '<option>No venues available</option>';
+    msg.textContent = 'No venues have been uploaded yet. Please check with the site admin.';
     return;
   }
-  window.location.href = `visitor.html?p=${data.slug}`;
+  venues = data;
+  select.innerHTML = venues.map(v => `<option value="${v.slug}">${v.name}</option>`).join('');
+  goBtn.disabled = false;
 })();
 </script>
 </body>
