@@ -44,13 +44,13 @@
   .stepDot.done{background:#e5f3ea;color:#1f6b3a;border-color:#8fc9a1;}
   .instruction{background:#fbf6ea;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:0.85rem;margin-bottom:10px;}
 
-  /* tap-type popup */
-  #typePopup{
+  /* tap-type / node-qr popups */
+  .popupOverlay{
     position:fixed;inset:0;background:rgba(0,0,0,0.35);display:none;
     align-items:center;justify-content:center;z-index:50;
   }
-  #typePopup .box{background:#fff;border-radius:10px;padding:18px;max-width:300px;width:90%;}
-  #typePopup button{width:100%;margin:4px 0;}
+  .popupOverlay .box{background:#fff;border-radius:10px;padding:18px;max-width:300px;width:90%;text-align:center;}
+  .popupOverlay button{width:100%;margin:4px 0;}
 </style>
 </head>
 <body>
@@ -148,12 +148,22 @@
   </div>
 </div>
 
-<div id="typePopup">
+<div id="typePopup" class="popupOverlay">
   <div class="box">
     <label style="margin-bottom:10px;">What is this point?</label>
     <button onclick="chooseType('gate')">Gate</button>
     <button onclick="chooseType('entrance')">Building Entrance</button>
     <button class="secondary" onclick="cancelTypePopup()">Cancel</button>
+  </div>
+</div>
+
+<div id="nodeQrPopup" class="popupOverlay">
+  <div class="box">
+    <label id="nodeQrTitle" style="margin-bottom:10px;"></label>
+    <div id="nodeQrCode" style="margin:10px auto;display:inline-block;"></div>
+    <div class="hint">Print this and place it physically at this point. Scanning it will mark the visitor's position here automatically.</div>
+    <div class="linkbox" id="nodeQrLink" style="margin-bottom:10px;"></div>
+    <button class="secondary" onclick="closeNodeQrPopup()">Close</button>
   </div>
 </div>
 
@@ -300,6 +310,20 @@ function renderQr(){
   document.getElementById('qrcode').innerHTML = '';
   new QRCode(document.getElementById('qrcode'), { text: link, width:140, height:140 });
 }
+
+function showNodeQr(nodeId){
+  const n = nodes.find(x=>x.id===nodeId);
+  if(!n) return;
+  const link = `${VISITOR_BASE_URL}?p=${currentProject.slug}&node=${n.id}`;
+  const label = n.name_en || n.name || (n.type==='gate' ? 'Gate' : 'Entrance');
+  document.getElementById('nodeQrTitle').textContent = `QR for: ${label}`;
+  document.getElementById('nodeQrLink').textContent = link;
+  const box = document.getElementById('nodeQrCode');
+  box.innerHTML = '';
+  new QRCode(box, { text: link, width:160, height:160 });
+  document.getElementById('nodeQrPopup').style.display='flex';
+}
+function closeNodeQrPopup(){ document.getElementById('nodeQrPopup').style.display='none'; }
 
 function goStep(step){
   if(step<1) step=1;
@@ -576,8 +600,11 @@ function renderNodeList(){
       const gu = n.name_gu || '';
       label = `Sr.${n.serial_no ?? '?'}` + (en ? ` — ${en}` : ' — (name pending)') + (gu ? ` / ${gu}` : '');
     }
+    const qrBtn = n.type!=='junction'
+      ? `<button class="secondary" style="padding:3px 8px;font-size:0.7rem;" onclick="showNodeQr('${n.id}')">QR</button>`
+      : '';
     div.innerHTML = `<span style="cursor:pointer;" onclick="highlightNode('${n.id}')"><b>#${i+1}</b> <span class="tag ${n.type}">${n.type}</span> ${label} <span style="color:#8a8672;font-size:0.7rem;">(tap to highlight)</span></span>
-      <button class="secondary danger" style="padding:3px 8px;font-size:0.7rem;" onclick="deleteNode('${n.id}')">Delete</button>`;
+      <span style="display:flex;gap:4px;">${qrBtn}<button class="secondary danger" style="padding:3px 8px;font-size:0.7rem;" onclick="deleteNode('${n.id}')">Delete</button></span>`;
     box.appendChild(div);
   });
 }

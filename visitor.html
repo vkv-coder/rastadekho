@@ -115,6 +115,7 @@ const T = {
     offtrack: '↩ You have drifted off the path — follow the arrow back to it.',
     updated: 'Route updated to new destination.',
     noRoute: 'No route found to this destination yet.',
+    qrStale: 'This QR code seems outdated. Please tap your position on the map below instead.',
     dist: 'Distance:', ft: 'ft', approx: 'Approx:', steps: 'steps',
     reset: 'Reset',
     meetWaiting: 'Waiting for the other person to tap their position...',
@@ -129,6 +130,7 @@ const T = {
     offtrack: '↩ તમે રસ્તા પરથી ભટકી ગયા છો — તીર બતાવે છે તે તરફ પાછા જાઓ.',
     updated: 'નવું સ્થળ પસંદ થયું, રસ્તો બદલાયો.',
     noRoute: 'આ સ્થળ માટે હજુ કોઈ રસ્તો મળ્યો નથી.',
+    qrStale: 'આ QR કોડ જૂનો લાગે છે. કૃપા કરી નીચે નકશા પર તમારું સ્થાન ટચ કરો.',
     dist: 'અંતર:', ft: 'ફૂટ', approx: 'અંદાજિત:', steps: 'પગલાં',
     reset: 'રીસેટ કરો',
     meetWaiting: 'બીજી વ્યક્તિ પોતાનું સ્થાન બતાવે તેની રાહ જોવાઈ રહી છે...',
@@ -511,36 +513,37 @@ function placeUserMarker(x,y){
   userMarker.setAttribute('opacity','1');
 }
 
-function attachMapEvents(){
-  svg.addEventListener('click', (evt)=>{
-    const actual = svgPoint(evt);
-    lastActualPoint = actual;
-    placeUserMarker(actual.x, actual.y);
-    startTapped = true;
+function markPosition(actual){
+  lastActualPoint = actual;
+  placeUserMarker(actual.x, actual.y);
+  startTapped = true;
 
-    if(meetCode){
-      pushMyMeetPosition(actual);
-      pollOtherPosition();
-      return;
-    }
+  if(meetCode){
+    pushMyMeetPosition(actual);
+    pollOtherPosition();
+    return;
+  }
 
-    if(!currentRoutePts){
-      const snap = snapToWalkway(actual);
-      if(!snap){ return; }
-      showOffRouteLine(actual, snap);
-      const ok = drawRoute(actual, snap);
-      if(ok) setStatus('drawn');
+  if(!currentRoutePts){
+    const snap = snapToWalkway(actual);
+    if(!snap){ return; }
+    showOffRouteLine(actual, snap);
+    const ok = drawRoute(actual, snap);
+    if(ok) setStatus('drawn');
+  } else {
+    const onRoute = closestPointOnPolyline(currentRoutePts, actual);
+    if(onRoute.d < ON_ROUTE_THRESHOLD_PX){
+      offRouteLine.setAttribute('opacity','0'); snapMarker.setAttribute('opacity','0');
+      setStatus('ontrack','ontrack');
     } else {
-      const onRoute = closestPointOnPolyline(currentRoutePts, actual);
-      if(onRoute.d < ON_ROUTE_THRESHOLD_PX){
-        offRouteLine.setAttribute('opacity','0'); snapMarker.setAttribute('opacity','0');
-        setStatus('ontrack','ontrack');
-      } else {
-        showOffRouteLine(actual, onRoute);
-        setStatus('offtrack','offtrack');
-      }
+      showOffRouteLine(actual, onRoute);
+      setStatus('offtrack','offtrack');
     }
-  });
+  }
+}
+
+function attachMapEvents(){
+  svg.addEventListener('click', (evt)=> markPosition(svgPoint(evt)));
 
   document.getElementById('destSelect').addEventListener('change', ()=>{
     if(meetCode) return; // destination dropdown is ignored while a Meet is active
@@ -675,6 +678,16 @@ async function loadProject(){
   buildSvg();
   populateDestinations();
   applyLanguage('en');
+
+  // If opened by scanning an entrance QR code, mark position there automatically
+  const nodeId = params.get('node');
+  if(nodeId){
+    if(nodes[nodeId]){
+      markPosition({x: nodes[nodeId].x, y: nodes[nodeId].y});
+    } else {
+      setStatus('qrStale');
+    }
+  }
 }
 
 loadProject();
