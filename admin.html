@@ -618,15 +618,18 @@ function highlightNode(id){
 
 async function deleteNode(id){
   if(!confirm('Delete this point and its connected walkways?')) return;
-  await sb.from('rd_edges').delete().or(`node_a.eq.${id},node_b.eq.${id}`);
-  await sb.from('rd_nodes').delete().eq('id', id);
+  const { error: edgeErr } = await sb.from('rd_edges').delete().or(`node_a.eq.${id},node_b.eq.${id}`);
+  if(edgeErr){ alert('Could not delete connected walkways: ' + edgeErr.message); return; }
+  const { error: nodeErr } = await sb.from('rd_nodes').delete().eq('id', id);
+  if(nodeErr){ alert('Could not delete point: ' + nodeErr.message); return; }
   loadProject();
 }
 
 async function undoLast(){
   if(currentStep===3 && edges.length){
     const last = edges[edges.length-1];
-    await sb.from('rd_edges').delete().eq('id', last.id);
+    const { error } = await sb.from('rd_edges').delete().eq('id', last.id);
+    if(error){ alert('Could not undo: ' + error.message); return; }
     loadProject();
     return;
   }
