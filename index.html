@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RastaDekho</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#2f6f5e">
+<link rel="icon" href="/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/icon-192.png">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{ --ink:#1c2b2d; --paper:#f2efe6; --path:#c85a3c; --building:#2f6f5e; --line:#cfc8b4; }
@@ -108,6 +112,12 @@ function goToVenue(){
   select.innerHTML = venues.map(v => `<option value="${v.slug}">${v.name}</option>`).join('');
   goBtn.disabled = false;
 })();
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
 </script>
 </body>
 </html>
