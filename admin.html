@@ -291,7 +291,8 @@ async function createProject(){
 async function loadProject(){
   const id = document.getElementById('projectSelect').value;
   if(!id){ document.getElementById('editorCard').style.display='none'; return; }
-  const { data: proj } = await sb.from('rd_projects').select('*').eq('id',id).single();
+  const { data: proj, error } = await sb.from('rd_projects').select('*').eq('id',id).single();
+  if(error || !proj){ alert('Could not load project: '+(error?.message||'not found')); document.getElementById('editorCard').style.display='none'; return; }
   currentProject = proj;
   const { data: n } = await sb.from('rd_nodes').select('*').eq('project_id',id);
   const { data: e } = await sb.from('rd_edges').select('*').eq('project_id',id);
